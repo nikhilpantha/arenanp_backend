@@ -1,0 +1,101 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type AuthPayload {
+  accessToken: String!
+  expiresAt: DateTime!
+  tokenType: String!
+  user: User!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type Mutation {
+  """Send an OTP to the given phone. Creates a stub user on first request."""
+  requestOtp(input: RequestOtpInput!): OtpRequestResult!
+
+  """Update the current user profile (name / email / avatar)."""
+  updateProfile(input: UpdateProfileInput!): User!
+
+  """Verify an OTP and return an access token."""
+  verifyOtp(input: VerifyOtpInput!): AuthPayload!
+}
+
+"""
+Lifecycle of a user requesting tournament-organizer access. Approved organizers can create tournaments.
+"""
+enum OrganizerStatus {
+  APPROVED
+  NOT_REQUESTED
+  PENDING_VERIFICATION
+  REJECTED
+  SUSPENDED
+}
+
+type OtpRequestResult {
+  """Only populated in dev (SMS_PROVIDER=stub)."""
+  devCode: String
+
+  """How long until the OTP expires."""
+  expiresInSeconds: Int!
+  phoneNumber: String!
+
+  """Seconds the client must wait before requesting another OTP."""
+  resendAvailableInSeconds: Int!
+}
+
+type Query {
+  """Returns the currently authenticated user."""
+  me: User!
+}
+
+input RequestOtpInput {
+  phoneNumber: String!
+}
+
+input UpdateProfileInput {
+  avatarUrl: String
+  email: String
+  fullName: String
+}
+
+type User {
+  avatarUrl: String
+  createdAt: DateTime!
+  email: String
+  fullName: String
+  id: ID!
+  isActive: Boolean!
+  lastLoginAt: DateTime
+  organizerStatus: OrganizerStatus!
+  phoneNumber: String!
+  role: UserRole!
+  updatedAt: DateTime!
+  venueOwnerStatus: VenueOwnerStatus!
+}
+
+"""Base user role. USER for everyone, SUPER_ADMIN for platform admins."""
+enum UserRole {
+  SUPER_ADMIN
+  USER
+}
+
+"""
+Lifecycle of a user requesting venue-owner access. Approved venue owners can create venues.
+"""
+enum VenueOwnerStatus {
+  APPROVED
+  NOT_REQUESTED
+  PENDING_VERIFICATION
+  REJECTED
+  SUSPENDED
+}
+
+input VerifyOtpInput {
+  code: String!
+  phoneNumber: String!
+}
