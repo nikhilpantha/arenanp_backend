@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RequestOtpInput } from './dto/request-otp.input';
 import { VerifyOtpInput } from './dto/verify-otp.input';
+import { LoginWithEmailInput } from './dto/login-with-email.input';
 import { Public } from '../../common/decorators/public.decorator';
 
 /**
@@ -34,6 +35,24 @@ export class AuthController {
       user: {
         id: user.id,
         phoneNumber: user.phoneNumber,
+        fullName: user.fullName,
+        role: user.role,
+      },
+    };
+  }
+
+  @Public()
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async loginWithEmail(@Body() body: LoginWithEmailInput) {
+    const { user, token } = await this.authService.loginWithEmail(body.email, body.password);
+    return {
+      accessToken: token.accessToken,
+      tokenType: token.tokenType,
+      expiresAt: token.expiresAt,
+      user: {
+        id: user.id,
+        email: user.email,
         fullName: user.fullName,
         role: user.role,
       },

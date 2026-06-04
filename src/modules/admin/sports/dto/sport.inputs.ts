@@ -1,0 +1,102 @@
+import { Field, ID, InputType, Int } from '@nestjs/graphql';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+
+@InputType()
+export class CreateSportInput {
+  @Field({ description: 'Display name (e.g. "Table Tennis").' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  name!: string;
+
+  @Field({
+    nullable: true,
+    description:
+      'URL-safe slug. Auto-generated from `name` if omitted. Lowercase letters, digits and hyphens only.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9]+(-[a-z0-9]+)*$/u, {
+    message: 'Slug must be lowercase letters, digits, and hyphens only.',
+  })
+  @MaxLength(60)
+  slug?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  iconUrl?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @Field(() => Int, { defaultValue: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  displayOrder?: number = 0;
+
+  @Field({ defaultValue: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
+}
+
+@InputType()
+export class UpdateSportInput {
+  @Field(() => ID)
+  @IsString()
+  id!: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  name?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9]+(-[a-z0-9]+)*$/u, {
+    message: 'Slug must be lowercase letters, digits, and hyphens only.',
+  })
+  @MaxLength(60)
+  slug?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  iconUrl?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  displayOrder?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

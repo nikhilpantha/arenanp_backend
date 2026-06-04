@@ -11,9 +11,12 @@ import { graphqlConfigFactory } from './config/graphql.config';
 
 import { PrismaModule } from './database/prisma.module';
 import { RedisModule } from './redis/redis.module';
+import { MailerModule } from './mailer/mailer.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { VenueOwnerInvitationsModule } from './modules/venue-owner-invitations/venue-owner-invitations.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -40,9 +43,12 @@ import { HealthController } from './health.controller';
     // Infrastructure
     PrismaModule,
     RedisModule,
+    MailerModule,
 
     AuthModule,
     UsersModule,
+    AdminModule,
+    VenueOwnerInvitationsModule,
   ],
   controllers: [HealthController],
 })

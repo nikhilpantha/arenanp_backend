@@ -9,6 +9,15 @@ export const envValidationSchema = Joi.object({
   APP_TIMEZONE: Joi.string().default('Asia/Kathmandu'),
   CORS_ORIGINS: Joi.string().default(''),
 
+  // Frontend base URL — used to build links inside transactional emails
+  // (invitation setup, password reset, etc).
+  FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
+
+  // Email — stub logs to console + returns the rendered link in dev so admins
+  // can click straight through. Swap for SendGrid / SES / Resend in prod.
+  MAIL_PROVIDER: Joi.string().valid('stub', 'sendgrid', 'resend', 'ses').default('stub'),
+  MAIL_FROM: Joi.string().default('Arena NP <noreply@arenanp.local>'),
+
   // Database
   DATABASE_URL: Joi.string()
     .uri({ scheme: ['postgresql', 'postgres'] })
@@ -43,10 +52,21 @@ export const envValidationSchema = Joi.object({
   // GraphQL
   GRAPHQL_INTROSPECTION: Joi.boolean().truthy('true').falsy('false').default(true),
 
+  // Platform fees
+  // Default commission percentage applied to a settlement when no PlatformSetting
+  // override exists yet. Moves to PlatformSetting in Feature 10.
+  PLATFORM_COMMISSION_PERCENTAGE: Joi.number().min(0).max(100).default(10),
+
   // Logging
   LOG_LEVEL: Joi.string().valid('trace', 'debug', 'info', 'warn', 'error', 'fatal').default('info'),
 
   // Seed
   SEED_SUPER_ADMIN_PHONE: Joi.string().optional(),
   SEED_SUPER_ADMIN_NAME: Joi.string().optional(),
+  // `tlds: { allow: false }` lets us use dev-only TLDs like `admin@arenanp.local`.
+  // Still enforces the format (must contain `@` and a domain).
+  SEED_SUPER_ADMIN_EMAIL: Joi.string()
+    .email({ tlds: { allow: false } })
+    .optional(),
+  SEED_SUPER_ADMIN_PASSWORD: Joi.string().min(8).optional(),
 });

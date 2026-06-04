@@ -19,6 +19,7 @@ CREATE TABLE "users" (
     "venueOwnerStatus" "VenueOwnerStatus" NOT NULL DEFAULT 'NOT_REQUESTED',
     "avatarUrl" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "tokenVersion" INTEGER NOT NULL DEFAULT 1,
     "lastLoginAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,

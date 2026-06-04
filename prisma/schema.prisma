@@ -41,6 +41,100 @@ enum VenueOwnerStatus {
   SUSPENDED
 }
 
+enum VenueVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentProvider {
+  ESEWA
+  KHALTI
+  FONEPAY
+  IMEPAY
+  STRIPE
+  BANK_TRANSFER
+  CASH
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum SettlementStatus {
+  PENDING
+  ON_HOLD
+  PAID
+  FAILED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+enum DisputeStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+enum DisputeCategory {
+  PAYMENT
+  VENUE_QUALITY
+  CUSTOMER_BEHAVIOUR
+  SAFETY
+  CANCELLATION
+  OTHER
+}
+
+enum TournamentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+  CANCELLED
+}
+
+enum TournamentVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum TournamentRegistrationStatus {
+  REGISTERED
+  CONFIRMED
+  WITHDRAWN
+  REJECTED
+}
+
+enum MatchStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────
 
 model User {
@@ -54,12 +148,683 @@ model User {
   venueOwnerStatus VenueOwnerStatus @default(NOT_REQUESTED)
   avatarUrl        String?
   isActive         Boolean          @default(true)
+  /// Monotonically increasing counter embedded in JWTs. Sign-out, suspend and
+  /// role-change bump this so any previously-issued token whose claim doesn't
+  /// match the current value is rejected by JwtStrategy.
+  tokenVersion     Int              @default(1)
   lastLoginAt      DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
+
+  organizerVerificationRequests          OrganizerVerificationRequest[]  @relation("UserOrganizerRequests")
+  organizerVerificationRequestsReviewed  OrganizerVerificationRequest[]  @relation("UserOrganizerRequestsReviewed")
+  venueOwnerVerificationRequests         VenueOwnerVerificationRequest[] @relation("UserVenueOwnerRequests")
+  venueOwnerVerificationRequestsReviewed VenueOwnerVerificationRequest[] @relation("UserVenueOwnerRequestsReviewed")
+  ownedVenues                            Venue[]                         @relation("UserOwnedVenues")
+  venuesReviewed                         Venue[]                         @relation("UserVenuesReviewed")
+  bookings                               Booking[]                       @relation("UserBookings")
+  cancelledBookings                      Booking[]                       @relation("UserCancelledBookings")
+  bookingStatusEvents                    BookingStatusEvent[]            @relation("UserBookingStatusEvents")
+  payments                               Payment[]                       @relation("UserPayments")
+  settlementsMarkedPaid                  Settlement[]                    @relation("UserSettlementsMarkedPaid")
+  refundRequests                         RefundRequest[]                 @relation("UserRefundRequests")
+  refundRequestsApproved                 RefundRequest[]                 @relation("UserRefundRequestsApproved")
+  refundRequestsProcessed                RefundRequest[]                 @relation("UserRefundRequestsProcessed")
+  disputesRaised                         Dispute[]                       @relation("UserDisputesRaised")
+  disputesClosed                         Dispute[]                       @relation("UserDisputesClosed")
+  disputeNotes                           DisputeNote[]                   @relation("UserDisputeNotes")
+  tournamentsOrganized                   Tournament[]                    @relation("UserTournamentsOrganized")
+  tournamentsReviewed                    Tournament[]                    @relation("UserTournamentsReviewed")
+  tournamentsClosed                      Tournament[]                    @relation("UserTournamentsClosed")
+  tournamentRegistrationsCaptained       TournamentRegistration[]        @relation("UserTournamentRegistrations")
+  platformSettingsUpdated                PlatformSetting[]               @relation("UserPlatformSettingsUpdated")
+  venueOwnerInvitationsCreated           VenueOwnerInvitation[]          @relation("UserVenueOwnerInvitationsCreated")
+  venueOwnerInvitationsAccepted          VenueOwnerInvitation[]          @relation("UserVenueOwnerInvitationsAccepted")
+  sportsCreated                          Sport[]                         @relation("UserSportsCreated")
 
   @@index([role])
   @@index([organizerStatus])
   @@index([venueOwnerStatus])
   @@map("users")
+}
+
+/// Submission record for a user requesting tournament-organizer access.
+/// Mirrors `User.organizerStatus` so admin-side reviews and the user-facing
+/// flag stay in sync, but carries the submitted business info, documents,
+/// rejection reason and reviewer audit trail that the User row doesn't track.
+model OrganizerVerificationRequest {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("UserOrganizerRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Submitted info — all optional so the mobile signup flow can evolve.
+  businessName String?
+  contactEmail String?
+  contactPhone String?
+  city         String?
+  bio          String?
+  experience   String?
+  documentUrls String[] @default([])
+
+  status          OrganizerStatus @default(PENDING_VERIFICATION)
+  rejectionReason String?
+
+  reviewedById String?
+  reviewer     User?     @relation("UserOrganizerRequestsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([userId])
+  @@map("organizer_verification_requests")
+}
+
+/// Submission record for a user requesting venue-owner access. Tracks the
+/// submitted business/KYC info (PAN, VAT, registration cert, address) +
+/// reviewer audit trail. `User.venueOwnerStatus` mirrors the request status
+/// and is kept in sync transactionally.
+model VenueOwnerVerificationRequest {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("UserVenueOwnerRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Submitted info — all optional so the mobile signup flow can evolve.
+  businessName       String?
+  businessType       String? // e.g. "individual", "registered_company", "partnership"
+  panNumber          String? // Nepal PAN number
+  vatNumber          String?
+  registrationNumber String? // company / sole-prop registration
+  contactEmail       String?
+  contactPhone       String?
+  address            String?
+  city               String?
+  documentUrls       String[] @default([])
+
+  status          VenueOwnerStatus @default(PENDING_VERIFICATION)
+  rejectionReason String?
+
+  reviewedById String?
+  reviewer     User?     @relation("UserVenueOwnerRequestsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([userId])
+  @@map("venue_owner_verification_requests")
+}
+
+/// A physical venue offered by a venue owner. Carries shared marketing info
+/// (name, address, photos) + the admin-side verification + featured state.
+/// Individual bookable surfaces (courts/grounds) hang off via the Court model.
+model Venue {
+  id      String @id @default(cuid())
+  ownerId String
+  owner   User   @relation("UserOwnedVenues", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  address   String?
+  city      String?
+  country   String?  @default("Nepal")
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+
+  coverImageUrl String?
+  imageUrls     String[] @default([])
+  documentUrls  String[] @default([])
+
+  amenities String[] @default([])
+
+  contactEmail String?
+  contactPhone String?
+
+  verificationStatus VenueVerificationStatus @default(PENDING)
+  rejectionReason    String?
+
+  isFeatured Boolean   @default(false)
+  featuredAt DateTime?
+
+  reviewedById String?
+  reviewer     User?     @relation("UserVenuesReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  courts      Court[]
+  bookings    Booking[]
+  settlements Settlement[]
+  tournaments Tournament[]
+  matches     Match[]
+  venueSports VenueSport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([verificationStatus])
+  @@index([city])
+  @@index([isFeatured])
+  @@index([ownerId])
+  @@map("venues")
+}
+
+/// A bookable surface within a venue (court / ground / pitch). Pricing and
+/// activation flag live here so a venue can have multiple sport types and
+/// individually disabled courts without affecting the venue's verification.
+model Court {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  name         String
+  sportId      String
+  sport        Sport    @relation(fields: [sportId], references: [id], onDelete: Restrict)
+  pricePerHour Decimal  @db.Decimal(10, 2)
+  description  String?
+  isActive     Boolean  @default(true)
+  imageUrls    String[] @default([])
+
+  bookings Booking[]
+  matches  Match[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([sportId])
+  @@map("courts")
+}
+
+/// Platform-managed catalogue of sports. The admin manages this list at
+/// /admin/sports. Every Court / Tournament FK references one of these rows,
+/// every Venue can offer many via the `venue_sports` junction, and only sports
+/// with `isActive = true` should appear in the public marketplace filters.
+model Sport {
+  id           String  @id @default(cuid())
+  slug         String  @unique
+  name         String
+  iconUrl      String?
+  description  String?
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
+
+  createdById String?
+  createdBy   User?   @relation("UserSportsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  venueSports VenueSport[]
+  courts      Court[]
+  tournaments Tournament[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, displayOrder])
+  @@map("sports")
+}
+
+/// Many-to-many junction between Venue and Sport. A venue lists every sport
+/// it offers here; individual Courts still FK directly to the specific Sport
+/// they host.
+model VenueSport {
+  venueId String
+  sportId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  sport   Sport  @relation(fields: [sportId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([venueId, sportId])
+  @@index([sportId])
+  @@map("venue_sports")
+}
+
+/// A reservation of a Court for a given time window.
+///
+/// Money fields are stored at booking time so historical totals stay correct
+/// even if the court's `pricePerHour` changes later. The state machine flows
+/// PENDING_PAYMENT -> CONFIRMED -> COMPLETED (or NO_SHOW), with CANCELLED as
+/// a terminal sink. Every transition writes a row to `BookingStatusEvent` so
+/// admins can audit the timeline.
+model Booking {
+  id String @id @default(cuid())
+
+  userId  String
+  user    User   @relation("UserBookings", fields: [userId], references: [id], onDelete: Cascade)
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  courtId String
+  court   Court  @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  startAt         DateTime
+  endAt           DateTime
+  durationMinutes Int
+
+  /// Snapshot of pricing at booking time — never recomputed.
+  pricePerHour Decimal @db.Decimal(10, 2)
+  subtotal     Decimal @db.Decimal(10, 2)
+  serviceFee   Decimal @default(0) @db.Decimal(10, 2)
+  total        Decimal @db.Decimal(10, 2)
+
+  status             BookingStatus @default(PENDING_PAYMENT)
+  cancellationReason String?
+  cancelledById      String?
+  cancelledBy        User?         @relation("UserCancelledBookings", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelledAt        DateTime?
+  completedAt        DateTime?
+
+  /// Free-text admin note. Surfaced in the admin detail drawer only.
+  adminNotes String?
+
+  payment        Payment?
+  statusEvents   BookingStatusEvent[]
+  refundRequests RefundRequest[]
+  disputes       Dispute[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([venueId])
+  @@index([courtId])
+  @@index([status])
+  @@index([startAt])
+  @@map("bookings")
+}
+
+/// Append-only timeline entry for a Booking. Created by the service layer on
+/// every state transition so the admin can replay the booking's lifecycle.
+model BookingStatusEvent {
+  id        String  @id @default(cuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+
+  actorId String?
+  actor   User?   @relation("UserBookingStatusEvents", fields: [actorId], references: [id], onDelete: SetNull)
+  note    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
+  @@index([createdAt])
+  @@map("booking_status_events")
+}
+
+/// Payment record attached to a Booking. One-to-one — partial / split payments
+/// would need a refactor. Holds the provider-side identifiers + the raw
+/// metadata blob for forensic debugging of failed transactions.
+model Payment {
+  id        String  @id @default(cuid())
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+
+  provider      PaymentProvider
+  providerTxnId String?
+  amount        Decimal         @db.Decimal(10, 2)
+  currency      String          @default("NPR")
+
+  status        PaymentStatus @default(PENDING)
+  failureReason String?
+  paidAt        DateTime?
+
+  metadata Json?
+
+  settlement     Settlement?
+  refundRequests RefundRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([provider])
+  @@index([paidAt])
+  @@map("payments")
+}
+
+/// Per-payment payout owed to a venue. Created at admin discretion (or by the
+/// future payment-success hook) and marked PAID once the bank transfer clears.
+///
+/// Commission rate is snapshotted on the row so historical settlements stay
+/// stable when the platform-wide rate changes (Feature 10 — PlatformSetting).
+model Settlement {
+  id String @id @default(cuid())
+
+  paymentId String  @unique
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  grossAmount              Decimal @db.Decimal(10, 2)
+  commissionPercentage     Decimal @db.Decimal(5, 2)
+  platformCommissionAmount Decimal @db.Decimal(10, 2)
+  netAmount                Decimal @db.Decimal(10, 2)
+  currency                 String  @default("NPR")
+
+  status           SettlementStatus @default(PENDING)
+  paidAt           DateTime?
+  paymentReference String?
+  notes            String?
+
+  markedPaidById String?
+  markedPaidBy   User?   @relation("UserSettlementsMarkedPaid", fields: [markedPaidById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([status])
+  @@index([paidAt])
+  @@map("settlements")
+}
+
+/// Refund request raised by a customer against a Booking / Payment.
+/// `requestedAmount` supports partial refunds; the Settlement / Payment side
+/// flips to REFUNDED or PARTIALLY_REFUNDED only when the refund is PROCESSED.
+model RefundRequest {
+  id String @id @default(cuid())
+
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  userId String
+  user   User   @relation("UserRefundRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  requestedAmount Decimal @db.Decimal(10, 2)
+  currency        String  @default("NPR")
+  reason          String
+
+  status          RefundStatus @default(REQUESTED)
+  rejectionReason String?
+  adminNotes      String?
+
+  approvedById String?
+  approvedBy   User?     @relation("UserRefundRequestsApproved", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime?
+
+  processedById      String?
+  processedBy        User?     @relation("UserRefundRequestsProcessed", fields: [processedById], references: [id], onDelete: SetNull)
+  processedAt        DateTime?
+  processorReference String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([bookingId])
+  @@index([status])
+  @@map("refund_requests")
+}
+
+/// Dispute raised by a customer against a Booking — e.g. quality complaints,
+/// venue issues, safety. Carries a freeform thread of admin notes for context.
+model Dispute {
+  id String @id @default(cuid())
+
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("UserDisputesRaised", fields: [userId], references: [id], onDelete: Cascade)
+
+  subject     String
+  description String
+  category    DisputeCategory @default(OTHER)
+
+  status     DisputeStatus @default(OPEN)
+  resolution String?
+
+  closedById String?
+  closedBy   User?     @relation("UserDisputesClosed", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt   DateTime?
+
+  notes DisputeNote[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([bookingId])
+  @@index([status])
+  @@map("disputes")
+}
+
+/// One entry in a Dispute's admin-note thread.
+model DisputeNote {
+  id String @id @default(cuid())
+
+  disputeId String
+  dispute   Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation("UserDisputeNotes", fields: [authorId], references: [id], onDelete: Cascade)
+
+  body String
+
+  createdAt DateTime @default(now())
+
+  @@index([disputeId])
+  @@map("dispute_notes")
+}
+
+/// A multi-team tournament organised on the platform. The flow is:
+///   DRAFT -> PENDING_APPROVAL -> APPROVED -> ACTIVE -> COMPLETED
+/// SUSPENDED / CANCELLED are terminal sinks an admin can move to at any time.
+///
+/// Tournament-side payments live inline on `TournamentRegistration` (entry
+/// fees are a different beast from booking payments and don't share the
+/// Settlement workflow).
+model Tournament {
+  id String @id @default(cuid())
+
+  organizerId String
+  organizer   User   @relation("UserTournamentsOrganized", fields: [organizerId], references: [id], onDelete: Cascade)
+
+  venueId String?
+  venue   Venue?  @relation(fields: [venueId], references: [id], onDelete: SetNull)
+
+  name        String
+  slug        String  @unique
+  description String?
+  sportId     String
+  sport       Sport   @relation(fields: [sportId], references: [id], onDelete: Restrict)
+  city        String?
+
+  startDate            DateTime
+  endDate              DateTime
+  registrationDeadline DateTime?
+
+  maxTeams Int?
+  minTeams Int?
+
+  entryFee  Decimal @default(0) @db.Decimal(10, 2)
+  prizePool Decimal @default(0) @db.Decimal(12, 2)
+  currency  String  @default("NPR")
+
+  coverImageUrl String?
+  imageUrls     String[] @default([])
+  rulesText     String?
+
+  status     TournamentStatus     @default(DRAFT)
+  visibility TournamentVisibility @default(PUBLIC)
+
+  rejectionReason  String?
+  suspensionReason String?
+
+  approvedById String?
+  approvedBy   User?     @relation("UserTournamentsReviewed", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime?
+
+  closedById String?
+  closedBy   User?     @relation("UserTournamentsClosed", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt   DateTime?
+
+  registrations TournamentRegistration[]
+  matches       Match[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizerId])
+  @@index([status])
+  @@index([visibility])
+  @@index([sportId])
+  @@index([city])
+  @@index([startDate])
+  @@map("tournaments")
+}
+
+/// A team's registration in a tournament. Carries the team's contact details,
+/// the inline entry-fee payment fields, and its `registrationStatus`.
+model TournamentRegistration {
+  id String @id @default(cuid())
+
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  captainUserId String?
+  captain       User?   @relation("UserTournamentRegistrations", fields: [captainUserId], references: [id], onDelete: SetNull)
+
+  teamName     String
+  contactEmail String?
+  contactPhone String?
+
+  status TournamentRegistrationStatus @default(REGISTERED)
+
+  // Inline entry-fee payment fields. Tournament payments don't go through the
+  // Settlement workflow — they're tracked here for the admin payments summary.
+  paymentStatus    PaymentStatus    @default(PENDING)
+  paymentProvider  PaymentProvider?
+  paymentReference String?
+  amountPaid       Decimal          @default(0) @db.Decimal(10, 2)
+  paidAt           DateTime?
+
+  matchesAsTeam1 Match[] @relation("MatchTeam1")
+  matchesAsTeam2 Match[] @relation("MatchTeam2")
+  matchesWon     Match[] @relation("MatchWinner")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tournamentId])
+  @@index([status])
+  @@map("tournament_registrations")
+}
+
+/// A single match within a Tournament. `round` + `matchNumber` lets the
+/// frontend reconstruct the bracket without storing it as a tree.
+model Match {
+  id String @id @default(cuid())
+
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  round       Int
+  matchNumber Int
+
+  team1Id String?
+  team1   TournamentRegistration? @relation("MatchTeam1", fields: [team1Id], references: [id], onDelete: SetNull)
+  team2Id String?
+  team2   TournamentRegistration? @relation("MatchTeam2", fields: [team2Id], references: [id], onDelete: SetNull)
+
+  team1Score Int?
+  team2Score Int?
+
+  winnerRegistrationId String?
+  winner               TournamentRegistration? @relation("MatchWinner", fields: [winnerRegistrationId], references: [id], onDelete: SetNull)
+
+  scheduledAt DateTime?
+
+  venueId String?
+  venue   Venue?  @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  courtId String?
+  court   Court?  @relation(fields: [courtId], references: [id], onDelete: SetNull)
+
+  status MatchStatus @default(SCHEDULED)
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tournamentId, round, matchNumber])
+  @@index([status])
+  @@map("matches")
+}
+
+/// Singleton row of platform-wide settings. Always exactly one row with
+/// id = "default"; the service upserts on first read so the table is never
+/// empty. Decimal / boolean / string types are intentional — a key-value
+/// store would lose the schema we want admins to edit through.
+///
+/// `platformCommissionPercentage` here overrides the env var consulted by
+/// the payments module (Feature 7). When this row exists the env var is
+/// only a hard-coded fallback for the very first boot.
+model PlatformSetting {
+  id String @id @default("default")
+
+  platformCommissionPercentage Decimal @default(10) @db.Decimal(5, 2)
+  slotLockDurationMinutes      Int     @default(10)
+  cancellationWindowHours      Int     @default(24)
+  refundPolicyText             String?
+  bookingServiceFee            Decimal @default(0) @db.Decimal(10, 2)
+
+  paymentProvidersEnabled PaymentProvider[] @default([])
+
+  supportContactNumber String?
+  supportEmail         String?
+  defaultCity          String?
+
+  maintenanceMode Boolean @default(false)
+
+  updatedById String?
+  updatedBy   User?   @relation("UserPlatformSettingsUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+/// Admin-issued invitation that lets a venue owner set their password and
+/// finish onboarding without going through the public KYC submission flow.
+///
+/// The link the admin sends contains a token of the form `<id>.<secret>`.
+/// Only the argon2 hash of `secret` is stored — the raw token is sent in the
+/// email and shown once (in dev) to the admin who issued it. Single-use:
+/// `acceptedAt` is set when consumed.
+model VenueOwnerInvitation {
+  id String @id @default(cuid())
+
+  email       String
+  fullName    String?
+  phoneNumber String?
+
+  tokenHash  String
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  invitedById String
+  invitedBy   User   @relation("UserVenueOwnerInvitationsCreated", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  createdUserId String?
+  createdUser   User?   @relation("UserVenueOwnerInvitationsAccepted", fields: [createdUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([acceptedAt])
+  @@map("venue_owner_invitations")
 }

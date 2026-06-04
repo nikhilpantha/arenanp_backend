@@ -31,10 +31,17 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         organizerStatus: true,
         venueOwnerStatus: true,
         isActive: true,
+        tokenVersion: true,
       },
     });
 
     if (!user || !user.isActive) throw new UnauthorizedException('User not found or inactive');
+
+    // Server-side session revocation. Sign-out / suspend / role change bumps
+    // `User.tokenVersion`; any token whose claim no longer matches is dead.
+    if (user.tokenVersion !== payload.tokenVersion) {
+      throw new UnauthorizedException('Session has been invalidated. Please sign in again.');
+    }
 
     return {
       id: user.id,

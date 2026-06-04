@@ -100,6 +100,57 @@ New modules get added under `src/modules/<name>/` as they're built — no placeh
 
 A refresh-token model isn't wired yet — when you're ready to add session rotation, add a `RefreshToken` Prisma model + extend `AuthService.signTokens()`.
 
+## Admin / panel login (email + password)
+
+Mobile users authenticate via phone+OTP. Web panels (super admin, future venue dashboard) use **email + password** — added because OTP-on-desktop is a poor experience for office workers.
+
+The same `AuthPayload` is returned, so the front-end logic afterwards (store JWT, set bearer header, call `me`) is identical to the OTP flow.
+
+**GraphQL:**
+
+```graphql
+mutation {
+  loginWithEmail(input: { email: "admin@arenanp.local", password: "ChangeMe!Admin123" }) {
+    accessToken
+    expiresAt
+    user {
+      id
+      email
+      role
+      organizerStatus
+      venueOwnerStatus
+    }
+  }
+}
+```
+
+**REST** (mirror, for non-GraphQL clients):
+
+```bash
+curl -X POST http://localhost:4000/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@arenanp.local","password":"ChangeMe!Admin123"}'
+```
+
+The endpoint:
+
+- Returns a generic `Invalid email or password.` for unknown email / wrong password / missing hash. A dummy Argon2 verify runs on the no-user path to keep response time constant (defeats timing-based email enumeration).
+- Hashes are **Argon2id** (`memoryCost: 65536, timeCost: 3, parallelism: 4` — argon2 defaults).
+- Login is open to any user with `email` + `passwordHash` set; the panel UI is responsible for checking `user.role` after a successful login and redirecting non-admins away.
+
+### Seeding admin credentials
+
+The seed (`npm run prisma:seed`) reads from `.env`:
+
+```
+SEED_SUPER_ADMIN_EMAIL=admin@arenanp.local
+SEED_SUPER_ADMIN_PASSWORD=ChangeMe!Admin123
+```
+
+The seed is idempotent — re-running it updates the password (re-hashed). To rotate the admin password later, edit `.env` and run `npm run prisma:seed` again.
+
+**Before production:** generate a strong password (`openssl rand -base64 24`) and set both env vars on your deployment platform's secret manager. The defaults are dev-only.
+
 ## Time zone
 
 All timestamps are stored in UTC (Postgres `timestamptz`). The application time zone is `Asia/Kathmandu` (NPT, +05:45). Time-of-day conversions happen at the edge — never in the database.

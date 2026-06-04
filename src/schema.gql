@@ -2,6 +2,468 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+input AcceptVenueOwnerInvitationInput {
+  """New password — 8 characters minimum."""
+  password: String!
+
+  """The token from the email link (format: <id>.<secret>)."""
+  token: String!
+}
+
+"""
+Admin-facing view of a Booking. Includes user, venue, court, payment and the status-change timeline.
+"""
+type AdminBooking {
+  adminNotes: String
+  cancellationReason: String
+  cancelledAt: DateTime
+  cancelledBy: AdminUser
+  completedAt: DateTime
+  court: AdminBookingCourtStub!
+  createdAt: DateTime!
+  durationMinutes: Int!
+  endAt: DateTime!
+  id: ID!
+  payment: AdminBookingPayment
+  pricePerHour: Float!
+  serviceFee: Float!
+  startAt: DateTime!
+  status: BookingStatus!
+  statusEvents: [AdminBookingStatusEvent!]!
+  subtotal: Float!
+  total: Float!
+  updatedAt: DateTime!
+  user: AdminUser!
+  venue: AdminBookingVenueStub!
+}
+
+"""Compact court stub shown inside booking payloads."""
+type AdminBookingCourtStub {
+  id: ID!
+  name: String!
+  pricePerHour: Float!
+  sport: SportStub!
+}
+
+"""Payment record attached to a booking, as seen by admin."""
+type AdminBookingPayment {
+  amount: Float!
+  createdAt: DateTime!
+  currency: String!
+  failureReason: String
+  id: ID!
+  paidAt: DateTime
+  provider: PaymentProvider!
+  providerTxnId: String
+  status: PaymentStatus!
+  updatedAt: DateTime!
+}
+
+"""Timeline entry for a booking — one row per state transition."""
+type AdminBookingStatusEvent {
+  actor: AdminUser
+  createdAt: DateTime!
+  fromStatus: BookingStatus
+  id: ID!
+  note: String
+  toStatus: BookingStatus!
+}
+
+"""Compact venue stub shown inside booking payloads."""
+type AdminBookingVenueStub {
+  city: String
+  id: ID!
+  name: String!
+}
+
+"""A bookable surface inside a venue (court / ground / pitch)."""
+type AdminCourt {
+  createdAt: DateTime!
+  description: String
+  id: ID!
+  imageUrls: [String!]!
+  isActive: Boolean!
+  name: String!
+  pricePerHour: Float!
+  sport: SportStub!
+}
+
+"""Top-line KPI numbers for the super-admin dashboard."""
+type AdminDashboardKpis {
+  activeTournaments: Int!
+  pendingOrganizerVerifications: Int!
+  pendingRefunds: Int!
+  pendingVenueApprovals: Int!
+  pendingVenueOwnerVerifications: Int!
+  todayBookings: Int!
+  totalBookings: Int!
+  totalRevenue: Float!
+  totalUsers: Int!
+  totalVenues: Int!
+}
+
+"""
+Aggregated dashboard payload returned to the super-admin home. Counts/lists for entities not yet implemented (venue, booking, payment, tournament) are returned as 0 / [] until those modules land.
+"""
+type AdminDashboardOverview {
+  bookingTrend: [BookingTrendPoint!]!
+  kpis: AdminDashboardKpis!
+  popularCities: [PopularCityItem!]!
+  popularSports: [PopularSportItem!]!
+  recentBookings: [RecentBookingItem!]!
+  recentPayments: [RecentPaymentItem!]!
+  revenueTrend: [RevenueTrendPoint!]!
+}
+
+"""
+Admin-facing view of a Dispute — booking context, status, resolution, and the admin-notes thread.
+"""
+type AdminDispute {
+  booking: AdminDisputeBookingStub!
+  category: DisputeCategory!
+  closedAt: DateTime
+  closedBy: AdminUser
+  createdAt: DateTime!
+  description: String!
+  id: ID!
+  notes: [AdminDisputeNote!]!
+  resolution: String
+  status: DisputeStatus!
+  subject: String!
+  updatedAt: DateTime!
+  user: AdminUser!
+}
+
+"""Booking context embedded in a dispute."""
+type AdminDisputeBookingStub {
+  id: ID!
+  sport: SportStub
+  startAt: DateTime!
+  status: String!
+  total: Float!
+  venueId: String
+  venueName: String!
+}
+
+type AdminDisputeNote {
+  author: AdminUser!
+  body: String!
+  createdAt: DateTime!
+  id: ID!
+}
+
+"""
+Admin-facing payment row: customer, booking summary, commission and (optional) settlement.
+"""
+type AdminPayment {
+  amount: Float!
+  booking: AdminPaymentBookingStub!
+  commission: CommissionBreakdown!
+  createdAt: DateTime!
+  currency: String!
+  failureReason: String
+  id: ID!
+  paidAt: DateTime
+  provider: PaymentProvider!
+  providerTxnId: String
+  settlement: AdminSettlement
+  status: PaymentStatus!
+  updatedAt: DateTime!
+  user: AdminUser!
+}
+
+"""Booking summary embedded in the payment payload."""
+type AdminPaymentBookingStub {
+  courtName: String!
+  id: ID!
+  sport: SportStub!
+  startAt: DateTime!
+  venueId: String
+  venueName: String!
+}
+
+"""Booking context embedded in a refund request."""
+type AdminRefundBookingStub {
+  id: ID!
+  sport: SportStub
+  startAt: DateTime!
+  status: String!
+  total: Float!
+  venueId: String
+  venueName: String!
+}
+
+"""Payment context embedded in a refund request (when one exists)."""
+type AdminRefundPaymentStub {
+  amount: Float!
+  id: ID!
+  paidAt: DateTime
+  provider: PaymentProvider!
+  providerTxnId: String
+  status: PaymentStatus!
+}
+
+"""
+Admin-facing view of a refund request — booking + payment context, lifecycle timestamps, reviewer audit.
+"""
+type AdminRefundRequest {
+  adminNotes: String
+  approvedAt: DateTime
+  approvedBy: AdminUser
+  booking: AdminRefundBookingStub!
+  createdAt: DateTime!
+  currency: String!
+  id: ID!
+  payment: AdminRefundPaymentStub
+  processedAt: DateTime
+  processedBy: AdminUser
+  processorReference: String
+  reason: String!
+  rejectionReason: String
+  requestedAmount: Float!
+  status: RefundStatus!
+  updatedAt: DateTime!
+  user: AdminUser!
+}
+
+type AdminSettlement {
+  commissionPercentage: Float!
+  createdAt: DateTime!
+  currency: String!
+  grossAmount: Float!
+  id: ID!
+  markedPaidBy: AdminUser
+  netAmount: Float!
+  notes: String
+  paidAt: DateTime
+  paymentReference: String
+  platformCommissionAmount: Float!
+  status: SettlementStatus!
+  updatedAt: DateTime!
+  venueId: ID!
+  venueName: String!
+}
+
+"""
+A sport in the platform catalogue. Every Court / Tournament references one of these, every Venue can offer many.
+"""
+type AdminSport {
+  createdAt: DateTime!
+  createdBy: AdminUser
+  description: String
+  displayOrder: Int!
+  iconUrl: String
+  id: ID!
+  isActive: Boolean!
+  name: String!
+  slug: String!
+  updatedAt: DateTime!
+}
+
+"""
+Admin-facing view of a Tournament — organizer, registrations, matches and payment totals.
+"""
+type AdminTournament {
+  approvedAt: DateTime
+  approvedBy: AdminUser
+  city: String
+  closedAt: DateTime
+  closedBy: AdminUser
+  coverImageUrl: String
+  createdAt: DateTime!
+  currency: String!
+  description: String
+  endDate: DateTime!
+  entryFee: Float!
+  id: ID!
+  imageUrls: [String!]!
+  matches: [AdminTournamentMatch!]!
+  maxTeams: Int
+  minTeams: Int
+  name: String!
+  organizer: AdminUser!
+  paymentSummary: AdminTournamentPaymentSummary!
+  prizePool: Float!
+  registrationDeadline: DateTime
+  registrations: [AdminTournamentRegistration!]!
+  rejectionReason: String
+  rulesText: String
+  slug: String!
+  sport: SportStub!
+  startDate: DateTime!
+  status: TournamentStatus!
+  suspensionReason: String
+  updatedAt: DateTime!
+  venue: AdminTournamentVenueStub
+  visibility: TournamentVisibility!
+}
+
+"""A single match row inside the bracket."""
+type AdminTournamentMatch {
+  courtName: String
+  id: ID!
+  matchNumber: Int!
+  notes: String
+  round: Int!
+  scheduledAt: DateTime
+  status: MatchStatus!
+  team1Name: String
+  team1Score: Int
+  team2Name: String
+  team2Score: Int
+  venue: AdminTournamentVenueStub
+  winnerTeamName: String
+}
+
+"""Aggregated payment totals for a tournament."""
+type AdminTournamentPaymentSummary {
+  currency: String!
+  entryFee: Float!
+  paidRegistrations: Int!
+  pendingPayments: Int!
+  totalCollected: Float!
+  totalRegistrations: Int!
+}
+
+"""Team / registration row inside the tournament detail."""
+type AdminTournamentRegistration {
+  amountPaid: Float!
+  captain: AdminUser
+  contactEmail: String
+  contactPhone: String
+  createdAt: DateTime!
+  id: ID!
+  paidAt: DateTime
+  paymentProvider: PaymentProvider
+  paymentReference: String
+  paymentStatus: PaymentStatus!
+  status: TournamentRegistrationStatus!
+  teamName: String!
+}
+
+"""Venue stub embedded in tournament payloads."""
+type AdminTournamentVenueStub {
+  city: String
+  id: ID!
+  name: String!
+}
+
+type AdminUser {
+  avatarUrl: String
+  createdAt: DateTime!
+  email: String
+  fullName: String
+  id: ID!
+  isActive: Boolean!
+  lastLoginAt: DateTime
+  organizerStatus: OrganizerStatus!
+  phoneNumber: String!
+  role: UserRole!
+  updatedAt: DateTime!
+  venueOwnerStatus: VenueOwnerStatus!
+}
+
+"""Compact booking summary for the user-detail drawer."""
+type AdminUserBookingSummary {
+  amount: Float!
+  createdAt: DateTime!
+  id: ID!
+  sport: String
+  status: String!
+  venueName: String
+}
+
+"""
+Full detail payload for the user-detail drawer. Related collections (bookings, payments, teams) return [] until those modules ship.
+"""
+type AdminUserDetail {
+  bookingsCount: Int!
+  recentBookings: [AdminUserBookingSummary!]!
+  recentPayments: [AdminUserPaymentSummary!]!
+  teams: [AdminUserTeamSummary!]!
+  totalSpent: Float!
+  user: AdminUser!
+}
+
+"""Compact payment summary for the user-detail drawer."""
+type AdminUserPaymentSummary {
+  amount: Float!
+  createdAt: DateTime!
+  id: ID!
+  provider: String
+  status: String!
+}
+
+"""Fields the admin user list can be sorted by."""
+enum AdminUserSortField {
+  CREATED_AT
+  FULL_NAME
+  LAST_LOGIN_AT
+}
+
+"""Compact team/clan summary for the user-detail drawer."""
+type AdminUserTeamSummary {
+  id: ID!
+  name: String!
+  role: String
+  sport: String
+}
+
+"""
+Admin-facing view of a Venue including owner, courts, gallery, KYC documents and review trail.
+"""
+type AdminVenue {
+  address: String
+  amenities: [String!]!
+  city: String
+  contactEmail: String
+  contactPhone: String
+  country: String
+  courts: [AdminCourt!]!
+  coverImageUrl: String
+  createdAt: DateTime!
+  description: String
+  documentUrls: [String!]!
+  featuredAt: DateTime
+  id: ID!
+  imageUrls: [String!]!
+  isFeatured: Boolean!
+  latitude: Float
+  longitude: Float
+  name: String!
+  owner: AdminUser!
+  rejectionReason: String
+  reviewedAt: DateTime
+  reviewer: AdminUser
+  sports: [SportStub!]!
+  updatedAt: DateTime!
+  verificationStatus: VenueVerificationStatus!
+}
+
+input ApproveOrganizerVerificationInput {
+  """Optional internal note. Not surfaced to the requester."""
+  note: String
+  requestId: ID!
+}
+
+input ApproveRefundInput {
+  """Optional internal note."""
+  adminNotes: String
+  refundId: ID!
+}
+
+input ApproveTournamentInput {
+  """Optional internal note."""
+  note: String
+  tournamentId: ID!
+}
+
+input ApproveVenueOwnerVerificationInput {
+  """Optional internal note. Not surfaced to the requester."""
+  note: String
+  requestId: ID!
+}
+
 type AuthPayload {
   accessToken: String!
   expiresAt: DateTime!
@@ -10,13 +472,414 @@ type AuthPayload {
 }
 
 """
+Booking lifecycle. PENDING_PAYMENT -> CONFIRMED -> COMPLETED, with CANCELLED / NO_SHOW as terminal branches.
+"""
+enum BookingStatus {
+  CANCELLED
+  COMPLETED
+  CONFIRMED
+  NO_SHOW
+  PENDING_PAYMENT
+}
+
+type BookingTrendPoint {
+  bookings: Int!
+  date: String!
+}
+
+input CancelBookingByAdminInput {
+  bookingId: ID!
+
+  """Required reason. Shown to the booker on their booking timeline."""
+  reason: String!
+}
+
+input CancelTournamentInput {
+  """Reason shown to organizer + registered teams."""
+  reason: String!
+  tournamentId: ID!
+}
+
+"""
+Commission breakdown for a payment. Live-computed when no Settlement row exists, otherwise reflects the snapshot stored on the Settlement.
+"""
+type CommissionBreakdown {
+  commissionPercentage: Float!
+  currency: String!
+  grossAmount: Float!
+
+  """true when no Settlement row exists yet — the values are computed live."""
+  isProvisional: Boolean!
+  platformCommissionAmount: Float!
+  venueSettlementAmount: Float!
+}
+
+input CreateAdminNoteOnDisputeInput {
+  body: String!
+  disputeId: ID!
+}
+
+"""
+Returned right after an invitation is created. `setupUrl` is only populated for the stub mail provider so dev admins can click straight through.
+"""
+type CreateInvitationResult {
+  invitation: VenueOwnerInvitation!
+
+  """Only set when MAIL_PROVIDER=stub."""
+  setupUrl: String
+}
+
+input CreateSportInput {
+  description: String
+  displayOrder: Int! = 0
+  iconUrl: String
+  isActive: Boolean! = true
+
+  """Display name (e.g. "Table Tennis")."""
+  name: String!
+
+  """
+  URL-safe slug. Auto-generated from `name` if omitted. Lowercase letters, digits and hyphens only.
+  """
+  slug: String
+}
+
+"""
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
 
+"""Subject area of a dispute. Used for routing + analytics."""
+enum DisputeCategory {
+  CANCELLATION
+  CUSTOMER_BEHAVIOUR
+  OTHER
+  PAYMENT
+  SAFETY
+  VENUE_QUALITY
+}
+
+"""Lifecycle of a dispute. OPEN -> IN_REVIEW -> RESOLVED / REJECTED."""
+enum DisputeStatus {
+  IN_REVIEW
+  OPEN
+  REJECTED
+  RESOLVED
+}
+
+"""Pre-form check the public setup page calls to validate the token."""
+type InvitationVerification {
+  email: String
+  fullName: String
+  phoneNumber: String
+
+  """When invalid, a user-facing reason (expired, accepted, missing)."""
+  reason: String
+  valid: Boolean!
+}
+
+input InviteVenueOwnerInput {
+  """Where the setup link will be sent."""
+  email: String!
+
+  """Optional — pre-fills the owner record."""
+  fullName: String
+
+  """Optional — pre-fills the owner record."""
+  phoneNumber: String
+}
+
+input ListAdminBookingsInput {
+  """Inclusive start of the booking startAt range (ISO)."""
+  fromDate: DateTime
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+  paymentProvider: PaymentProvider
+
+  """Match on user name, user phone, venue name or booking id."""
+  search: String
+  sortOrder: SortOrder! = DESC
+
+  """Sport filter (matches the court sport)."""
+  sport: String
+  status: BookingStatus
+
+  """Exclusive end of the booking startAt range (ISO)."""
+  toDate: DateTime
+
+  """Venue id to scope by."""
+  venueId: String
+}
+
+input ListAdminDisputesInput {
+  category: DisputeCategory
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+
+  """Match on subject, customer name, phone or venue."""
+  search: String
+  sortOrder: SortOrder! = DESC
+  status: DisputeStatus
+}
+
+input ListAdminPaymentsInput {
+  """Inclusive lower bound for paidAt (ISO)."""
+  fromDate: DateTime
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+  provider: PaymentProvider
+
+  """Match on payment id, provider txn id, customer name or venue name."""
+  search: String
+  settlementStatus: SettlementStatus
+  sortOrder: SortOrder! = DESC
+  status: PaymentStatus
+
+  """Exclusive upper bound for paidAt (ISO)."""
+  toDate: DateTime
+
+  """Scope to one venue."""
+  venueId: String
+}
+
+input ListAdminRefundsInput {
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+
+  """Match on customer name, venue name or booking id."""
+  search: String
+  sortOrder: SortOrder! = DESC
+  status: RefundStatus
+}
+
+input ListAdminTournamentsInput {
+  """Exact city match (case-insensitive)."""
+  city: String
+
+  """Inclusive lower bound for startDate (ISO)."""
+  fromDate: DateTime
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+
+  """Match on tournament name, organizer name or city."""
+  search: String
+  sortOrder: SortOrder! = DESC
+
+  """Sport filter (matches Tournament.sport)."""
+  sport: String
+  status: TournamentStatus
+
+  """Exclusive upper bound for startDate (ISO)."""
+  toDate: DateTime
+  visibility: TournamentVisibility
+}
+
+input ListAdminUsersInput {
+  """true = only active users, false = only suspended."""
+  isActive: Boolean
+  organizerStatus: OrganizerStatus
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+  role: UserRole
+
+  """Case-insensitive match on fullName, phoneNumber or email."""
+  search: String
+  sortBy: AdminUserSortField! = CREATED_AT
+  sortOrder: SortOrder! = DESC
+  venueOwnerStatus: VenueOwnerStatus
+}
+
+input ListAdminVenuesInput {
+  """Exact city match (case-insensitive)."""
+  city: String
+
+  """true = only featured, false = only non-featured."""
+  isFeatured: Boolean
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+
+  """Match on venue name, owner name, owner phone or city."""
+  search: String
+  sortOrder: SortOrder! = DESC
+
+  """Filter venues that offer this sport."""
+  sport: String
+  verificationStatus: VenueVerificationStatus
+}
+
+input ListOrganizerVerificationRequestsInput {
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+
+  """Match on user fullName, phoneNumber, email or businessName."""
+  search: String
+  sortOrder: SortOrder! = DESC
+
+  """Filter by request status. Defaults to all when omitted."""
+  status: OrganizerStatus
+}
+
+input ListVenueOwnerVerificationRequestsInput {
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+
+  """Match on user fullName, phoneNumber, email, businessName or panNumber."""
+  search: String
+  sortOrder: SortOrder! = DESC
+
+  """Filter by request status. Defaults to all when omitted."""
+  status: VenueOwnerStatus
+}
+
+input LoginWithEmailInput {
+  email: String!
+  password: String!
+}
+
+input MarkBookingCompletedInput {
+  bookingId: ID!
+
+  """Optional internal note appended to the timeline event."""
+  note: String
+}
+
+input MarkRefundProcessedInput {
+  adminNotes: String
+
+  """Bank transfer / provider refund reference."""
+  processorReference: String
+  refundId: ID!
+}
+
+input MarkSettlementPaidInput {
+  """Internal note."""
+  notes: String
+
+  """
+  Payment to settle. If no Settlement row exists yet, one is created with the current commission snapshot.
+  """
+  paymentId: ID!
+
+  """Bank transfer reference / cheque number / etc."""
+  paymentReference: String
+}
+
+"""State of a tournament match."""
+enum MatchStatus {
+  CANCELLED
+  COMPLETED
+  IN_PROGRESS
+  SCHEDULED
+}
+
 type Mutation {
+  """
+  Set the new account’s password, mark the invitation accepted, and return an access token so the user is signed in immediately.
+  """
+  acceptVenueOwnerInvitation(input: AcceptVenueOwnerInvitationInput!): AuthPayload!
+
+  """Approve a pending organizer-verification request."""
+  adminApproveOrganizerVerification(input: ApproveOrganizerVerificationInput!): OrganizerVerificationRequestModel!
+  adminApproveRefund(input: ApproveRefundInput!): AdminRefundRequest!
+  adminApproveTournament(input: ApproveTournamentInput!): AdminTournament!
+  adminApproveVenue(venueId: ID!): AdminVenue!
+
+  """Approve a pending venue-owner-verification request."""
+  adminApproveVenueOwnerVerification(input: ApproveVenueOwnerVerificationInput!): VenueOwnerVerificationRequestModel!
+
+  """Cancel a booking on the user’s behalf. A reason is required."""
+  adminCancelBooking(input: CancelBookingByAdminInput!): AdminBooking!
+  adminCancelTournament(input: CancelTournamentInput!): AdminTournament!
+
+  """Append an admin note to a dispute."""
+  adminCreateAdminNoteOnDispute(input: CreateAdminNoteOnDisputeInput!): AdminDispute!
+  adminCreateSport(input: CreateSportInput!): AdminSport!
+
+  """
+  Permanently remove a sport. Blocked when courts / tournaments / venue offerings still reference it — deactivate instead.
+  """
+  adminDeleteSport(id: ID!): Boolean!
+  adminFeatureVenue(venueId: ID!): AdminVenue!
+
+  """
+  Create a venue-owner invitation, send the email, and return the resulting row. In dev (stub mailer) the setup URL is returned so admins can click straight through.
+  """
+  adminInviteVenueOwner(input: InviteVenueOwnerInput!): CreateInvitationResult!
+
+  """Mark a paid / CONFIRMED booking as COMPLETED."""
+  adminMarkBookingCompleted(input: MarkBookingCompletedInput!): AdminBooking!
+
+  """
+  After the bank-side refund clears: flips RefundRequest -> PROCESSED, Payment -> REFUNDED / PARTIALLY_REFUNDED, and freezes any unsettled Settlement.
+  """
+  adminMarkRefundProcessed(input: MarkRefundProcessedInput!): AdminRefundRequest!
+
+  """
+  Mark a payment’s settlement as PAID. Creates the Settlement row on first invocation, then flips it to PAID.
+  """
+  adminMarkSettlementPaid(input: MarkSettlementPaidInput!): AdminPayment!
+
+  """Reinstate organizer access on a previously-suspended user."""
+  adminReinstateOrganizerAccess(userId: ID!): AdminUser!
+
+  """Reinstate venue-owner access on a previously-suspended user."""
+  adminReinstateVenueOwnerAccess(userId: ID!): AdminUser!
+
+  """Reject a pending organizer-verification request with a reason."""
+  adminRejectOrganizerVerification(input: RejectOrganizerVerificationInput!): OrganizerVerificationRequestModel!
+  adminRejectRefund(input: RejectRefundInput!): AdminRefundRequest!
+  adminRejectVenue(input: RejectVenueInput!): AdminVenue!
+
+  """Reject a pending venue-owner-verification request with a reason."""
+  adminRejectVenueOwnerVerification(input: RejectVenueOwnerVerificationInput!): VenueOwnerVerificationRequestModel!
+
+  """Rotate the token, push the expiry forward and resend the email."""
+  adminResendVenueOwnerInvitation(input: ResendVenueOwnerInvitationInput!): CreateInvitationResult!
+
+  """Delete a pending invitation so its link stops working."""
+  adminRevokeVenueOwnerInvitation(input: RevokeVenueOwnerInvitationInput!): Boolean!
+
+  """Suspend organizer access on a user (organizerStatus -> SUSPENDED)."""
+  adminSuspendOrganizerAccess(userId: ID!): AdminUser!
+  adminSuspendTournament(input: SuspendTournamentInput!): AdminTournament!
+
+  """Suspend a user (sets isActive=false)."""
+  adminSuspendUser(id: ID!): AdminUser!
+  adminSuspendVenue(input: SuspendVenueInput!): AdminVenue!
+
+  """Suspend venue-owner access on a user (venueOwnerStatus -> SUSPENDED)."""
+  adminSuspendVenueOwnerAccess(userId: ID!): AdminUser!
+  adminUnfeatureVenue(venueId: ID!): AdminVenue!
+
+  """Reactivate a previously suspended user (sets isActive=true)."""
+  adminUnsuspendUser(id: ID!): AdminUser!
+
+  """
+  Transition a dispute. RESOLVED requires a resolution; closed disputes (RESOLVED / REJECTED) cannot be reopened.
+  """
+  adminUpdateDisputeStatus(input: UpdateDisputeStatusInput!): AdminDispute!
+
+  """
+  Partially update platform settings. Only fields present in the input are touched.
+  """
+  adminUpdatePlatformSettings(input: UpdatePlatformSettingsInput!): PlatformSettings!
+  adminUpdateSport(input: UpdateSportInput!): AdminSport!
+
+  """
+  Generic status setter. Requires a reason when moving to SUSPENDED / CANCELLED.
+  """
+  adminUpdateTournamentStatus(input: UpdateTournamentStatusInput!): AdminTournament!
+  adminUpdateTournamentVisibility(input: UpdateTournamentVisibilityInput!): AdminTournament!
+
+  """Update a user’s platform role (USER / SUPER_ADMIN)."""
+  adminUpdateUserRole(input: UpdateUserRoleInput!): AdminUser!
+
+  """Generic verification-status setter; useful for bulk-status flows."""
+  adminUpdateVenueVerificationStatus(input: UpdateVenueVerificationStatusInput!): AdminVenue!
+
+  """
+  Email + password login. Used by admin / venue-management web panels. Mobile users use OTP.
+  """
+  loginWithEmail(input: LoginWithEmailInput!): AuthPayload!
+
   """Send an OTP to the given phone. Creates a stub user on first request."""
   requestOtp(input: RequestOtpInput!): OtpRequestResult!
+
+  """
+  Sign the caller out by bumping their tokenVersion. Every previously-issued access token is rejected on the next request.
+  """
+  signOut: Boolean!
 
   """Update the current user profile (name / email / avatar)."""
   updateProfile(input: UpdateProfileInput!): User!
@@ -36,6 +899,24 @@ enum OrganizerStatus {
   SUSPENDED
 }
 
+type OrganizerVerificationRequestModel {
+  bio: String
+  businessName: String
+  city: String
+  contactEmail: String
+  contactPhone: String
+  createdAt: DateTime!
+  documentUrls: [String!]!
+  experience: String
+  id: ID!
+  rejectionReason: String
+  reviewedAt: DateTime
+  reviewer: AdminUser
+  status: OrganizerStatus!
+  updatedAt: DateTime!
+  user: AdminUser!
+}
+
 type OtpRequestResult {
   """Only populated in dev (SMS_PROVIDER=stub)."""
   devCode: String
@@ -48,19 +929,466 @@ type OtpRequestResult {
   resendAvailableInSeconds: Int!
 }
 
+"""Pagination metadata returned alongside list payloads."""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  page: Int!
+  pageSize: Int!
+  totalItems: Int!
+  totalPages: Int!
+}
+
+type PaginatedAdminBookings {
+  items: [AdminBooking!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedAdminDisputes {
+  items: [AdminDispute!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedAdminPayments {
+  items: [AdminPayment!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedAdminRefunds {
+  items: [AdminRefundRequest!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedAdminTournaments {
+  items: [AdminTournament!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedAdminUsers {
+  items: [AdminUser!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedAdminVenues {
+  items: [AdminVenue!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedOrganizerVerificationRequests {
+  items: [OrganizerVerificationRequestModel!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedVenueOwnerVerificationRequests {
+  items: [VenueOwnerVerificationRequestModel!]!
+  pageInfo: PageInfo!
+}
+
+input PaginationInput {
+  """Page number, 1-indexed."""
+  page: Int! = 1
+
+  """Page size, max 100."""
+  pageSize: Int! = 20
+}
+
+"""
+Provider that processed the payment (Nepal-first list + MANUAL for offline reconciliation).
+"""
+enum PaymentProvider {
+  BANK_TRANSFER
+  CASH
+  ESEWA
+  FONEPAY
+  IMEPAY
+  KHALTI
+  MANUAL
+  STRIPE
+}
+
+"""
+Payment state across providers. REFUNDED / PARTIALLY_REFUNDED feed into the refunds module.
+"""
+enum PaymentStatus {
+  FAILED
+  PARTIALLY_REFUNDED
+  PENDING
+  REFUNDED
+  SUCCEEDED
+}
+
+"""
+Aggregate totals for a payment filter set — used to power the KPI strip.
+"""
+type PaymentsOverview {
+  currency: String!
+  grossRevenue: Float!
+  platformCommission: Float!
+  refundedTotal: Float!
+  venuesOwed: Float!
+  venuesSettled: Float!
+}
+
+"""
+Platform-wide configuration. Singleton — one row per environment. Edited from /admin/settings.
+"""
+type PlatformSettings {
+  bookingServiceFee: Float!
+  cancellationWindowHours: Int!
+  createdAt: DateTime!
+  defaultCity: String
+  id: ID!
+  maintenanceMode: Boolean!
+  paymentProvidersEnabled: [PaymentProvider!]!
+  platformCommissionPercentage: Float!
+  refundPolicyText: String
+  slotLockDurationMinutes: Int!
+  supportContactNumber: String
+  supportEmail: String
+  updatedAt: DateTime!
+  updatedBy: AdminUser
+}
+
+type PopularCityItem {
+  bookings: Int!
+  city: String!
+}
+
+type PopularSportItem {
+  bookings: Int!
+  sport: String!
+}
+
 type Query {
+  """
+  Full detail for a single booking — user, venue, court, payment and timeline.
+  """
+  adminBookingDetail(id: ID!): AdminBooking!
+
+  """
+  Aggregated KPIs, trends and recent activity for the super-admin dashboard.
+  """
+  adminDashboardOverview: AdminDashboardOverview!
+
+  """Single dispute with booking context + the full admin-notes thread."""
+  adminDisputeDetail(id: ID!): AdminDispute!
+
+  """
+  List bookings with date / venue / sport / status / payment-provider filters.
+  """
+  adminListBookings(input: ListAdminBookingsInput): PaginatedAdminBookings!
+
+  """List customer disputes with status / category / search filters."""
+  adminListDisputes(input: ListAdminDisputesInput): PaginatedAdminDisputes!
+
+  """
+  List organizer-verification submissions with optional status / search filters.
+  """
+  adminListOrganizerVerificationRequests(input: ListOrganizerVerificationRequestsInput): PaginatedOrganizerVerificationRequests!
+
+  """List payments with provider / status / settlement / date filters."""
+  adminListPayments(input: ListAdminPaymentsInput): PaginatedAdminPayments!
+
+  """List refund requests with optional status / search filters."""
+  adminListRefundRequests(input: ListAdminRefundsInput): PaginatedAdminRefunds!
+
+  """
+  Catalogue of sports. Pass `activeOnly: true` to filter to the ones currently bookable.
+  """
+  adminListSports(activeOnly: Boolean! = false): [AdminSport!]!
+
+  """
+  List tournaments with sport / status / visibility / city / date filters.
+  """
+  adminListTournaments(input: ListAdminTournamentsInput): PaginatedAdminTournaments!
+
+  """List platform users with pagination, search and filters."""
+  adminListUsers(input: ListAdminUsersInput): PaginatedAdminUsers!
+
+  """List pending (un-accepted) venue-owner invitations."""
+  adminListVenueOwnerInvitations: [VenueOwnerInvitation!]!
+
+  """
+  List venue-owner-verification submissions with optional status / search filters.
+  """
+  adminListVenueOwnerVerificationRequests(input: ListVenueOwnerVerificationRequestsInput): PaginatedVenueOwnerVerificationRequests!
+
+  """
+  List venues with pagination, search, and city / sport / status / featured filters.
+  """
+  adminListVenues(input: ListAdminVenuesInput): PaginatedAdminVenues!
+
+  """
+  Single organizer-verification submission with submitted info + reviewer.
+  """
+  adminOrganizerVerificationRequest(id: ID!): OrganizerVerificationRequestModel!
+
+  """Single payment with commission breakdown and settlement info."""
+  adminPaymentDetail(id: ID!): AdminPayment!
+
+  """
+  Aggregated totals (gross / commission / venue-owed / venue-settled / refunded) for the filter set.
+  """
+  adminPaymentsOverview(input: ListAdminPaymentsInput): PaymentsOverview!
+
+  """
+  Read the singleton platform settings row. Created on first access if missing.
+  """
+  adminPlatformSettings: PlatformSettings!
+
+  """Single refund request — full booking + payment context."""
+  adminRefundRequestDetail(id: ID!): AdminRefundRequest!
+
+  """
+  Returns every payment matching the filter set as a flat CSV-ready array. The frontend serialises to CSV.
+  """
+  adminSettlementsExport(input: ListAdminPaymentsInput): [SettlementExportRow!]!
+  adminSport(id: ID!): AdminSport!
+
+  """
+  Full tournament detail — organizer, registrations, matches, and the payment summary.
+  """
+  adminTournamentDetail(id: ID!): AdminTournament!
+
+  """Full detail payload for a single user."""
+  adminUserDetail(id: ID!): AdminUserDetail!
+
+  """Single venue with owner, courts, gallery and review trail."""
+  adminVenueDetail(id: ID!): AdminVenue!
+
+  """
+  Single venue-owner-verification submission with submitted info + reviewer.
+  """
+  adminVenueOwnerVerificationRequest(id: ID!): VenueOwnerVerificationRequestModel!
+
   """Returns the currently authenticated user."""
   me: User!
+
+  """Validate the token before showing the password-setup form."""
+  verifyVenueOwnerInvitation(token: String!): InvitationVerification!
+}
+
+"""Compact booking row for the dashboard recent-bookings table."""
+type RecentBookingItem {
+  amount: Float!
+  createdAt: DateTime!
+  id: String!
+  sport: String
+  status: String!
+  userFullName: String
+  venueName: String
+}
+
+"""Compact payment row for the dashboard recent-payments table."""
+type RecentPaymentItem {
+  amount: Float!
+  createdAt: DateTime!
+  id: String!
+  provider: String
+  status: String!
+  userFullName: String
+}
+
+"""
+Lifecycle of a refund request. REQUESTED -> APPROVED -> PROCESSED. REJECTED is terminal.
+"""
+enum RefundStatus {
+  APPROVED
+  PROCESSED
+  REJECTED
+  REQUESTED
+}
+
+input RejectOrganizerVerificationInput {
+  """User-visible explanation. Shown to the requester."""
+  reason: String!
+  requestId: ID!
+}
+
+input RejectRefundInput {
+  """Reason shown to the customer."""
+  reason: String!
+  refundId: ID!
+}
+
+input RejectVenueInput {
+  """User-visible explanation. Shown to the venue owner."""
+  reason: String!
+  venueId: ID!
+}
+
+input RejectVenueOwnerVerificationInput {
+  """User-visible explanation. Shown to the requester."""
+  reason: String!
+  requestId: ID!
 }
 
 input RequestOtpInput {
   phoneNumber: String!
 }
 
+input ResendVenueOwnerInvitationInput {
+  invitationId: ID!
+}
+
+type RevenueTrendPoint {
+  date: String!
+  revenue: Float!
+}
+
+input RevokeVenueOwnerInvitationInput {
+  invitationId: ID!
+}
+
+"""
+Flat row shape suitable for CSV export. The frontend turns these into a CSV file client-side.
+"""
+type SettlementExportRow {
+  bookingId: String!
+  commissionPercentage: Float!
+  currency: String!
+  customerName: String!
+  grossAmount: Float!
+  paidAt: String!
+  paymentId: String!
+  paymentReference: String
+  platformCommissionAmount: Float!
+  provider: String!
+  settlementPaidAt: String
+  settlementStatus: String!
+  venueCity: String!
+  venueId: String!
+  venueName: String!
+  venueSettlementAmount: Float!
+}
+
+"""
+Lifecycle of a venue payout. Created PENDING on payment success, transitions to PAID once the bank transfer clears.
+"""
+enum SettlementStatus {
+  FAILED
+  ON_HOLD
+  PAID
+  PENDING
+}
+
+"""Ascending / descending sort order."""
+enum SortOrder {
+  ASC
+  DESC
+}
+
+"""
+Compact sport reference embedded in venue / booking / tournament payloads.
+"""
+type SportStub {
+  iconUrl: String
+  id: ID!
+  name: String!
+  slug: String!
+}
+
+input SuspendTournamentInput {
+  """Reason shown to the organizer."""
+  reason: String!
+  tournamentId: ID!
+}
+
+input SuspendVenueInput {
+  """Optional reason. Shown to the venue owner."""
+  reason: String
+  venueId: ID!
+}
+
+"""
+Lifecycle of a team registration. REGISTERED -> CONFIRMED, or WITHDRAWN / REJECTED.
+"""
+enum TournamentRegistrationStatus {
+  CONFIRMED
+  REGISTERED
+  REJECTED
+  WITHDRAWN
+}
+
+"""
+Tournament lifecycle. DRAFT -> PENDING_APPROVAL -> APPROVED -> ACTIVE -> COMPLETED. SUSPENDED / CANCELLED are admin sinks.
+"""
+enum TournamentStatus {
+  ACTIVE
+  APPROVED
+  CANCELLED
+  COMPLETED
+  DRAFT
+  PENDING_APPROVAL
+  SUSPENDED
+}
+
+"""Visibility of a tournament on the public app."""
+enum TournamentVisibility {
+  PRIVATE
+  PUBLIC
+  UNLISTED
+}
+
+input UpdateDisputeStatusInput {
+  disputeId: ID!
+
+  """Required when transitioning to RESOLVED — shown on the dispute card."""
+  resolution: String
+  status: DisputeStatus!
+}
+
+input UpdatePlatformSettingsInput {
+  bookingServiceFee: Float
+  cancellationWindowHours: Int
+  defaultCity: String
+  maintenanceMode: Boolean
+  paymentProvidersEnabled: [PaymentProvider!]
+  platformCommissionPercentage: Float
+  refundPolicyText: String
+  slotLockDurationMinutes: Int
+  supportContactNumber: String
+  supportEmail: String
+}
+
 input UpdateProfileInput {
   avatarUrl: String
   email: String
   fullName: String
+}
+
+input UpdateSportInput {
+  description: String
+  displayOrder: Int
+  iconUrl: String
+  id: ID!
+  isActive: Boolean
+  name: String
+  slug: String
+}
+
+input UpdateTournamentStatusInput {
+  """Required when transitioning to SUSPENDED / CANCELLED / REJECTED."""
+  reason: String
+  status: TournamentStatus!
+  tournamentId: ID!
+}
+
+input UpdateTournamentVisibilityInput {
+  tournamentId: ID!
+  visibility: TournamentVisibility!
+}
+
+input UpdateUserRoleInput {
+  role: UserRole!
+  userId: ID!
+}
+
+input UpdateVenueVerificationStatusInput {
+  """Required when status is REJECTED."""
+  reason: String
+  status: VenueVerificationStatus!
+  venueId: ID!
 }
 
 type User {
@@ -84,6 +1412,20 @@ enum UserRole {
   USER
 }
 
+"""Admin-facing view of a pending / accepted venue-owner invitation."""
+type VenueOwnerInvitation {
+  acceptedAt: DateTime
+  createdAt: DateTime!
+  createdUser: AdminUser
+  email: String!
+  expiresAt: DateTime!
+  fullName: String
+  id: ID!
+  invitedBy: AdminUser!
+  phoneNumber: String
+  updatedAt: DateTime!
+}
+
 """
 Lifecycle of a user requesting venue-owner access. Approved venue owners can create venues.
 """
@@ -91,6 +1433,37 @@ enum VenueOwnerStatus {
   APPROVED
   NOT_REQUESTED
   PENDING_VERIFICATION
+  REJECTED
+  SUSPENDED
+}
+
+type VenueOwnerVerificationRequestModel {
+  address: String
+  businessName: String
+  businessType: String
+  city: String
+  contactEmail: String
+  contactPhone: String
+  createdAt: DateTime!
+  documentUrls: [String!]!
+  id: ID!
+  panNumber: String
+  registrationNumber: String
+  rejectionReason: String
+  reviewedAt: DateTime
+  reviewer: AdminUser
+  status: VenueOwnerStatus!
+  updatedAt: DateTime!
+  user: AdminUser!
+  vatNumber: String
+}
+
+"""
+Admin-side moderation status of a Venue. PENDING until approved; SUSPENDED hides it from the marketplace.
+"""
+enum VenueVerificationStatus {
+  APPROVED
+  PENDING
   REJECTED
   SUSPENDED
 }
