@@ -10,7 +10,6 @@ export class AdminDashboardKpis {
   @Field(() => Int) totalBookings!: number;
   @Field(() => Float) totalRevenue!: number;
   @Field(() => Int) pendingOrganizerVerifications!: number;
-  @Field(() => Int) pendingVenueOwnerVerifications!: number;
   @Field(() => Int) pendingVenueApprovals!: number;
   @Field(() => Int) pendingRefunds!: number;
   @Field(() => Int) activeTournaments!: number;

@@ -1,5 +1,7 @@
 import { Field, ID, InputType, Int } from '@nestjs/graphql';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsInt,
   IsOptional,
@@ -42,6 +44,14 @@ export class CreateSportInput {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  @Field(() => [String], { defaultValue: [], description: 'Amenity presets for this sport.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(60, { each: true })
+  @ArrayMaxSize(40)
+  features?: string[] = [];
 
   @Field(() => Int, { defaultValue: 0 })
   @IsOptional()
@@ -88,6 +98,14 @@ export class UpdateSportInput {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  @Field(() => [String], { nullable: true, description: 'Amenity presets for this sport.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(60, { each: true })
+  @ArrayMaxSize(40)
+  features?: string[];
 
   @Field(() => Int, { nullable: true })
   @IsOptional()

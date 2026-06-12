@@ -7,6 +7,7 @@ const DEFAULT_SPORTS = [
   { slug: 'futsal', name: 'Futsal', displayOrder: 10 },
   { slug: 'football', name: 'Football', displayOrder: 20 },
   { slug: 'cricket', name: 'Cricket', displayOrder: 30 },
+  { slug: 'indoor-cricket', name: 'Indoor Cricket', displayOrder: 35 },
   { slug: 'basketball', name: 'Basketball', displayOrder: 40 },
   { slug: 'volleyball', name: 'Volleyball', displayOrder: 50 },
   { slug: 'badminton', name: 'Badminton', displayOrder: 60 },

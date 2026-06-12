@@ -6,17 +6,23 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { appConfig } from './config/app.config';
 import { databaseConfig } from './config/database.config';
 import { redisConfig } from './config/redis.config';
+import { storageConfig } from './config/storage.config';
 import { envValidationSchema } from './config/env.validation';
 import { graphqlConfigFactory } from './config/graphql.config';
 
 import { PrismaModule } from './database/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { MailerModule } from './mailer/mailer.module';
+import { StorageModule } from './storage/storage.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
-import { VenueOwnerInvitationsModule } from './modules/venue-owner-invitations/venue-owner-invitations.module';
+import { BookingModule } from './modules/booking/booking.module';
+import { CapabilitiesModule } from './modules/capabilities/capabilities.module';
+import { VenueModule } from './modules/venue/venue.module';
+import { VenueInvitationsModule } from './modules/venue-invitations/venue-invitations.module';
+import { SportsModule } from './modules/sports/sports.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -24,7 +30,7 @@ import { HealthController } from './health.controller';
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      load: [appConfig, databaseConfig, redisConfig],
+      load: [appConfig, databaseConfig, redisConfig, storageConfig],
       validationSchema: envValidationSchema,
       validationOptions: { abortEarly: false },
     }),
@@ -44,11 +50,16 @@ import { HealthController } from './health.controller';
     PrismaModule,
     RedisModule,
     MailerModule,
+    StorageModule,
 
+    CapabilitiesModule,
     AuthModule,
     UsersModule,
     AdminModule,
-    VenueOwnerInvitationsModule,
+    VenueModule,
+    BookingModule,
+    VenueInvitationsModule,
+    SportsModule,
   ],
   controllers: [HealthController],
 })

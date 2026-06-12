@@ -6,13 +6,17 @@ import {
 } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/types/auth-context';
+import { StorageService } from '../../../storage/storage.service';
 import { AdminSportsRepository } from './admin-sports.repository';
 import { AdminSport, mapSportToAdmin } from './dto/admin-sport.model';
 import { CreateSportInput, UpdateSportInput } from './dto/sport.inputs';
 
 @Injectable()
 export class AdminSportsService {
-  constructor(private readonly repo: AdminSportsRepository) {}
+  constructor(
+    private readonly repo: AdminSportsRepository,
+    private readonly storage: StorageService,
+  ) {}
 
   async list(activeOnly: boolean): Promise<AdminSport[]> {
     const rows = await this.repo.list({ activeOnly });
@@ -39,6 +43,7 @@ export class AdminSportsService {
       name: input.name.trim(),
       iconUrl: input.iconUrl?.trim() || null,
       description: input.description?.trim() || null,
+      features: normaliseFeatures(input.features),
       displayOrder: input.displayOrder ?? 0,
       isActive: input.isActive ?? true,
       createdById: actor.id,
@@ -57,18 +62,26 @@ export class AdminSportsService {
       }
     }
 
+    const nextIcon = input.iconUrl === undefined ? undefined : input.iconUrl?.trim() || null;
+
     const updated = await this.repo.update({
       id: input.id,
       data: {
         slug: input.slug ?? undefined,
         name: input.name?.trim() ?? undefined,
-        iconUrl: input.iconUrl === undefined ? undefined : input.iconUrl?.trim() || null,
+        iconUrl: nextIcon,
         description:
           input.description === undefined ? undefined : input.description?.trim() || null,
+        features: input.features === undefined ? undefined : normaliseFeatures(input.features),
         displayOrder: input.displayOrder ?? undefined,
         isActive: input.isActive ?? undefined,
       },
     });
+
+    // Clean up the previous icon object if it was replaced or cleared.
+    if (nextIcon !== undefined && existing.iconUrl && existing.iconUrl !== nextIcon) {
+      await this.storage.deleteMany([existing.iconUrl]);
+    }
     return mapSportToAdmin(updated);
   }
 
@@ -88,6 +101,7 @@ export class AdminSportsService {
       );
     }
     await this.repo.delete(id);
+    await this.storage.deleteMany([existing.iconUrl]);
     return true;
   }
 
@@ -99,4 +113,19 @@ export class AdminSportsService {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
   }
+}
+
+/** Trim, drop blanks, and de-duplicate (case-insensitive) the amenity presets. */
+function normaliseFeatures(features?: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of features ?? []) {
+    const value = raw.trim();
+    const key = value.toLowerCase();
+    if (value && !seen.has(key)) {
+      seen.add(key);
+      out.push(value);
+    }
+  }
+  return out;
 }

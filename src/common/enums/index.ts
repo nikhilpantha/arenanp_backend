@@ -1,10 +1,15 @@
 import { registerEnumType } from '@nestjs/graphql';
 import {
+  BookingPaymentStatus,
+  BookingSource,
   BookingStatus,
+  CapabilityStatus,
+  CapabilityType,
+  CustomerType,
   DisputeCategory,
   DisputeStatus,
   MatchStatus,
-  OrganizerStatus,
+  MembershipStatus,
   PaymentProvider,
   PaymentStatus,
   RefundStatus,
@@ -13,7 +18,7 @@ import {
   TournamentStatus,
   TournamentVisibility,
   UserRole,
-  VenueOwnerStatus,
+  VenueMemberRole,
   VenueVerificationStatus,
 } from '@prisma/client';
 
@@ -22,28 +27,54 @@ registerEnumType(UserRole, {
   description: 'Base user role. USER for everyone, SUPER_ADMIN for platform admins.',
 });
 
-registerEnumType(OrganizerStatus, {
-  name: 'OrganizerStatus',
+registerEnumType(CapabilityType, {
+  name: 'CapabilityType',
   description:
-    'Lifecycle of a user requesting tournament-organizer access. Approved organizers can create tournaments.',
+    'What a user can be verified as on the platform (VENUE, ORGANIZER, COACH). Additive — a user may hold several.',
 });
 
-registerEnumType(VenueOwnerStatus, {
-  name: 'VenueOwnerStatus',
+registerEnumType(CapabilityStatus, {
+  name: 'CapabilityStatus',
   description:
-    'Lifecycle of a user requesting venue-owner access. Approved venue owners can create venues.',
+    'Lifecycle of a capability application, shared by every CapabilityType. Approved grants the capability.',
+});
+
+registerEnumType(VenueMemberRole, {
+  name: 'VenueMemberRole',
+  description:
+    "A user's role within a single venue (venue-scoped RBAC): OWNER, MANAGER, FRONT_DESK, STAFF, COACH.",
+});
+
+registerEnumType(MembershipStatus, {
+  name: 'MembershipStatus',
+  description: 'Lifecycle of a venue membership (staff seat): INVITED, ACTIVE, SUSPENDED.',
 });
 
 registerEnumType(VenueVerificationStatus, {
   name: 'VenueVerificationStatus',
   description:
-    'Admin-side moderation status of a Venue. PENDING until approved; SUSPENDED hides it from the marketplace.',
+    'Admin-side moderation status of a single Venue listing. PENDING until approved; SUSPENDED hides it from the marketplace.',
 });
 
 registerEnumType(BookingStatus, {
   name: 'BookingStatus',
   description:
     'Booking lifecycle. PENDING_PAYMENT -> CONFIRMED -> COMPLETED, with CANCELLED / NO_SHOW as terminal branches.',
+});
+
+registerEnumType(CustomerType, {
+  name: 'CustomerType',
+  description: 'Who holds a booking — TEAM, INDIVIDUAL or CLUB.',
+});
+
+registerEnumType(BookingSource, {
+  name: 'BookingSource',
+  description: 'How the booking was created — WALK_IN, ONLINE or SUBSCRIPTION.',
+});
+
+registerEnumType(BookingPaymentStatus, {
+  name: 'BookingPaymentStatus',
+  description: 'Venue-side payment state of a booking — PAID, PENDING or PARTIAL.',
 });
 
 registerEnumType(PaymentProvider, {
@@ -103,11 +134,16 @@ registerEnumType(MatchStatus, {
 });
 
 export {
+  BookingPaymentStatus,
+  BookingSource,
   BookingStatus,
+  CapabilityStatus,
+  CapabilityType,
+  CustomerType,
   DisputeCategory,
   DisputeStatus,
   MatchStatus,
-  OrganizerStatus,
+  MembershipStatus,
   PaymentProvider,
   PaymentStatus,
   RefundStatus,
@@ -116,6 +152,6 @@ export {
   TournamentStatus,
   TournamentVisibility,
   UserRole,
-  VenueOwnerStatus,
+  VenueMemberRole,
   VenueVerificationStatus,
 };

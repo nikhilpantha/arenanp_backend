@@ -1,8 +1,10 @@
 import { Args, Mutation, Resolver } from '@nestjs/graphql';
+import { CapabilityType } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { RequestOtpInput } from './dto/request-otp.input';
 import { VerifyOtpInput } from './dto/verify-otp.input';
 import { LoginWithEmailInput } from './dto/login-with-email.input';
+import { LoginWithPhoneInput } from './dto/login-with-phone.input';
 import { OtpRequestResult } from './dto/otp-request-result';
 import { AuthPayload } from './dto/auth-payload';
 import { Public } from '../../common/decorators/public.decorator';
@@ -14,12 +16,32 @@ import type { AuthUser } from '../../common/types/auth-context';
 export class AuthResolver {
   constructor(private readonly authService: AuthService) {}
 
+  // ── Per-role sign-up / sign-in. The role is fixed server-side (never a client
+  // param). Each sends an OTP and ensures that capability on the same number,
+  // creating it the first time ("roleAdded"). Used by both sign-up and sign-in.
+
   @Public()
   @Mutation(() => OtpRequestResult, {
-    description: 'Send an OTP to the given phone. Creates a stub user on first request.',
+    description: 'Send an OTP and ensure the PLAYER role for this phone (granted instantly).',
   })
-  async requestOtp(@Args('input') input: RequestOtpInput): Promise<OtpRequestResult> {
-    return this.authService.requestOtp(input.phoneNumber);
+  async requestPlayerOtp(@Args('input') input: RequestOtpInput): Promise<OtpRequestResult> {
+    return this.authService.requestOtp(input.phoneNumber, CapabilityType.PLAYER, input.password);
+  }
+
+  @Public()
+  @Mutation(() => OtpRequestResult, {
+    description: 'Send an OTP and ensure the VENUE (owner) role for this phone.',
+  })
+  async requestVenueOtp(@Args('input') input: RequestOtpInput): Promise<OtpRequestResult> {
+    return this.authService.requestOtp(input.phoneNumber, CapabilityType.VENUE, input.password);
+  }
+
+  @Public()
+  @Mutation(() => OtpRequestResult, {
+    description: 'Send an OTP and ensure the ORGANIZER role for this phone.',
+  })
+  async requestOrganizerOtp(@Args('input') input: RequestOtpInput): Promise<OtpRequestResult> {
+    return this.authService.requestOtp(input.phoneNumber, CapabilityType.ORGANIZER, input.password);
   }
 
   @Public()
@@ -43,6 +65,24 @@ export class AuthResolver {
   })
   async loginWithEmail(@Args('input') input: LoginWithEmailInput): Promise<AuthPayload> {
     const { user, token } = await this.authService.loginWithEmail(input.email, input.password);
+    return {
+      accessToken: token.accessToken,
+      tokenType: token.tokenType,
+      expiresAt: token.expiresAt,
+      user: mapUserToGraphql(user),
+    };
+  }
+
+  @Public()
+  @Mutation(() => AuthPayload, {
+    description:
+      'Phone + password login (mobile). Only works after the phone has been verified via OTP once.',
+  })
+  async loginWithPhone(@Args('input') input: LoginWithPhoneInput): Promise<AuthPayload> {
+    const { user, token } = await this.authService.loginWithPhonePassword(
+      input.phoneNumber,
+      input.password,
+    );
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,

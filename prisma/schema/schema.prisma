@@ -1,0 +1,28 @@
+// Arena NP — Prisma schema (split across prisma/schema/*.prisma)
+//
+// Identity model (3 layers):
+//   1. User.role          — coarse global role: USER | SUPER_ADMIN.
+//   2. UserCapability      — what a user is verified for (PLAYER | VENUE | ORGANIZER
+//                            | COACH …), status-gated. Additive, non-exclusive: one
+//                            user can hold several. Signing up as a given type grants
+//                            only that capability; signing in via another panel on the
+//                            same number adds that capability (it is never duplicated).
+//   3. VenueMembership     — venue-scoped RBAC. A user's role *inside* a venue
+//                            (OWNER | MANAGER | FRONT_DESK | STAFF | COACH) with an
+//                            optional fine-grained `permissions[]` override.
+//
+// Role-specific *data* lives in its own table, never on `users`:
+//   player_profiles, organizer_profiles (1:1), venues (1:N via membership).
+// Role *applications + audit* live in the *_verification_requests tables.
+//
+// Files: identity · venue · booking · payment · tournament · platform.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["prismaSchemaFolder"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

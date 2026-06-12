@@ -28,10 +28,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         id: true,
         phoneNumber: true,
         role: true,
-        organizerStatus: true,
-        venueOwnerStatus: true,
         isActive: true,
         tokenVersion: true,
+        capabilities: { select: { type: true, status: true } },
       },
     });
 
@@ -47,8 +46,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       id: user.id,
       phoneNumber: user.phoneNumber,
       role: user.role,
-      organizerStatus: user.organizerStatus,
-      venueOwnerStatus: user.venueOwnerStatus,
+      capabilities: user.capabilities.map((c) => ({ type: c.type, status: c.status })),
     };
   }
 }

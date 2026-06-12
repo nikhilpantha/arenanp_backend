@@ -1,0 +1,270 @@
+// ─── Identity: base user + capabilities + role profiles + RBAC ──────────────
+
+enum UserRole {
+  USER
+  SUPER_ADMIN
+}
+
+/// What a user can be verified as on the platform. Additive — a user may hold
+/// several. Backed by the `user_capabilities` table, not a column on `users`.
+/// PLAYER is opt-in like the rest: it's granted when an account signs up as /
+/// adds the player role, not forced on every account.
+enum CapabilityType {
+  PLAYER
+  VENUE
+  ORGANIZER
+  COACH
+}
+
+/// Lifecycle of any capability application, shared by every CapabilityType.
+/// Open roles (PLAYER) land APPROVED immediately; gated roles run the
+/// PENDING_VERIFICATION → APPROVED/REJECTED flow.
+enum CapabilityStatus {
+  NOT_REQUESTED
+  PENDING_VERIFICATION
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+/// A user's role *within a single venue* (venue-scoped RBAC). OWNER is the venue
+/// asset's owner; the rest are staff tiers. Default permissions per role are
+/// resolved in code (ROLE_PERMISSIONS), with per-membership overrides allowed.
+enum VenueMemberRole {
+  OWNER
+  MANAGER
+  FRONT_DESK
+  STAFF
+  COACH
+}
+
+/// Lifecycle of a venue membership (staff seat).
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+/// Base account. Holds only auth + common fields; every role's specific data
+/// lives in its own table (player_profiles, organizer_profiles, venues).
+/// Capabilities (PLAYER / VENUE / ORGANIZER / COACH) live in `user_capabilities`.
+model User {
+  id           String    @id @default(cuid())
+  fullName     String?
+  phoneNumber  String    @unique
+  email        String?   @unique
+  passwordHash String?
+  role         UserRole  @default(USER)
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  /// Set on the first successful OTP verification. Password login is only
+  /// allowed once the phone has been verified at least once.
+  phoneVerifiedAt DateTime?
+  /// Monotonically increasing counter embedded in JWTs. Sign-out, suspend and
+  /// role/capability changes bump this so any previously-issued token whose
+  /// claim doesn't match the current value is rejected by JwtStrategy.
+  tokenVersion Int       @default(1)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Layer 2 — capabilities (status gates)
+  capabilities UserCapability[]
+
+  // Role profiles (1:1)
+  playerProfile    PlayerProfile?
+  organizerProfile OrganizerProfile?
+
+  // Layer 3 — venue-scoped RBAC
+  venueMemberships        VenueMembership[] @relation("UserVenueMemberships")
+  venueMembershipsInvited VenueMembership[] @relation("UserVenueMembershipsInvited")
+
+  // Verification applications + reviewer audit trail
+  organizerVerificationRequests         OrganizerVerificationRequest[] @relation("UserOrganizerRequests")
+  organizerVerificationRequestsReviewed OrganizerVerificationRequest[] @relation("UserOrganizerRequestsReviewed")
+  venueVerificationRequests             VenueVerificationRequest[]     @relation("UserVenueRequests")
+  venueVerificationRequestsReviewed     VenueVerificationRequest[]     @relation("UserVenueRequestsReviewed")
+
+  ownedVenues    Venue[] @relation("UserOwnedVenues")
+  venuesReviewed Venue[] @relation("UserVenuesReviewed")
+
+  bookings            Booking[]            @relation("UserBookings")
+  bookingsCreated     Booking[]            @relation("UserBookingsCreated")
+  cancelledBookings   Booking[]            @relation("UserCancelledBookings")
+  bookingStatusEvents BookingStatusEvent[] @relation("UserBookingStatusEvents")
+
+  payments              Payment[]    @relation("UserPayments")
+  settlementsMarkedPaid Settlement[] @relation("UserSettlementsMarkedPaid")
+
+  refundRequests          RefundRequest[] @relation("UserRefundRequests")
+  refundRequestsApproved  RefundRequest[] @relation("UserRefundRequestsApproved")
+  refundRequestsProcessed RefundRequest[] @relation("UserRefundRequestsProcessed")
+
+  disputesRaised Dispute[]     @relation("UserDisputesRaised")
+  disputesClosed Dispute[]     @relation("UserDisputesClosed")
+  disputeNotes   DisputeNote[] @relation("UserDisputeNotes")
+
+  tournamentsOrganized             Tournament[]             @relation("UserTournamentsOrganized")
+  tournamentsReviewed              Tournament[]             @relation("UserTournamentsReviewed")
+  tournamentsClosed                Tournament[]             @relation("UserTournamentsClosed")
+  tournamentRegistrationsCaptained TournamentRegistration[] @relation("UserTournamentRegistrations")
+
+  platformSettingsUpdated  PlatformSetting[] @relation("UserPlatformSettingsUpdated")
+  venueInvitationsCreated  VenueInvitation[] @relation("UserVenueInvitationsCreated")
+  venueInvitationsAccepted VenueInvitation[] @relation("UserVenueInvitationsAccepted")
+  sportsCreated            Sport[]           @relation("UserSportsCreated")
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Layer 2 — a single capability grant for a user. One row per (user, type).
+/// `status` mirrors the matching *_verification_requests lifecycle and is the
+/// fast-path the guards read (also embedded in the JWT). Adding a new capability
+/// type (e.g. COACH) needs no migration on `users`.
+model UserCapability {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      CapabilityType
+  status    CapabilityStatus @default(NOT_REQUESTED)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([userId, type])
+  @@index([type, status])
+  @@map("user_capabilities")
+}
+
+/// Player role data (1:1 with User). Created when the PLAYER capability is
+/// granted (sign-up as / add player), not for every account.
+model PlayerProfile {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio        String?
+  city       String?
+  skillLevel String?
+  /// Favourite sports chosen during onboarding (Sport.id values).
+  sportIds   String[] @default([])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("player_profiles")
+}
+
+/// Tournament-organizer role data (1:1 with User). Created when the ORGANIZER
+/// capability is requested; the living record once approved (the verification
+/// request stays as the immutable application + audit trail).
+model OrganizerProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName String?
+  contactEmail String?
+  contactPhone String?
+  city         String?
+  bio          String?
+  experience   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("organizer_profiles")
+}
+
+/// Layer 3 — a user's seat within a venue (venue-scoped RBAC). The venue's
+/// OWNER is the membership with role = OWNER (auto-created on venue creation);
+/// staff are additional rows. `permissions` overrides/extends the role default.
+model VenueMembership {
+  id          String           @id @default(cuid())
+  venueId     String
+  venue       Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User             @relation("UserVenueMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  role        VenueMemberRole
+  /// Fine-grained permission overrides on top of the role's defaults.
+  permissions String[]         @default([])
+  status      MembershipStatus @default(ACTIVE)
+
+  invitedById String?
+  invitedBy   User?   @relation("UserVenueMembershipsInvited", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([venueId, userId])
+  @@index([userId])
+  @@index([venueId])
+  @@index([role])
+  @@map("venue_memberships")
+}
+
+// ─── Verification applications (audit) ──────────────────────────────────────
+
+/// Application for the ORGANIZER capability. Carries submitted business info +
+/// reviewer audit trail; the matching UserCapability(ORGANIZER) status is kept
+/// in sync transactionally.
+model OrganizerVerificationRequest {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("UserOrganizerRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Submitted info — all optional so the mobile signup flow can evolve.
+  businessName String?
+  contactEmail String?
+  contactPhone String?
+  city         String?
+  bio          String?
+  experience   String?
+  documentUrls String[] @default([])
+
+  status          CapabilityStatus @default(PENDING_VERIFICATION)
+  rejectionReason String?
+
+  reviewedById String?
+  reviewer     User?     @relation("UserOrganizerRequestsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([userId])
+  @@map("organizer_verification_requests")
+}
+
+/// Application for the VENUE capability (account-level gate — "may this user
+/// operate venues?"). Tracks KYC info (PAN, VAT, registration, address) +
+/// reviewer audit trail; the UserCapability(VENUE) status is kept in sync.
+/// Distinct from Venue.verificationStatus, which moderates each venue *listing*.
+model VenueVerificationRequest {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("UserVenueRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Submitted info — all optional so the mobile signup flow can evolve.
+  businessName       String?
+  businessType       String? // e.g. "individual", "registered_company", "partnership"
+  panNumber          String? // Nepal PAN number
+  vatNumber          String?
+  registrationNumber String? // company / sole-prop registration
+  contactEmail       String?
+  contactPhone       String?
+  address            String?
+  city               String?
+  documentUrls       String[] @default([])
+
+  status          CapabilityStatus @default(PENDING_VERIFICATION)
+  rejectionReason String?
+
+  reviewedById String?
+  reviewer     User?     @relation("UserVenueRequestsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([userId])
+  @@map("venue_verification_requests")
+}

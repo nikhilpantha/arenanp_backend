@@ -60,6 +60,16 @@ export const envValidationSchema = Joi.object({
   // Logging
   LOG_LEVEL: Joi.string().valid('trace', 'debug', 'info', 'warn', 'error', 'fatal').default('info'),
 
+  // Storage (AWS S3) — private bucket; backend issues presigned upload/download URLs.
+  // Empty-allowed so dev/test/CI without AWS still boots; StorageService throws a
+  // clear error only when an upload/download is actually attempted unconfigured.
+  AWS_REGION: Joi.string().default('ap-south-1'),
+  AWS_S3_BUCKET: Joi.string().allow('').default(''),
+  AWS_ACCESS_KEY_ID: Joi.string().allow('').default(''),
+  AWS_SECRET_ACCESS_KEY: Joi.string().allow('').default(''),
+  S3_PRESIGN_EXPIRY_SECONDS: Joi.number().integer().min(60).default(900),
+  S3_DOWNLOAD_EXPIRY_SECONDS: Joi.number().integer().min(60).default(3600),
+
   // Seed
   SEED_SUPER_ADMIN_PHONE: Joi.string().optional(),
   SEED_SUPER_ADMIN_NAME: Joi.string().optional(),

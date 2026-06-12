@@ -1,11 +1,12 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import type { AuthUser } from '../../../common/types/auth-context';
+import { StorageService } from '../../../storage/storage.service';
 
 import { AdminUser } from '../users/dto/admin-user.model';
 import { OrganizerVerificationService } from './organizer-verification.service';
@@ -21,7 +22,16 @@ import {
 @UseGuards(RolesGuard)
 @Roles(UserRole.SUPER_ADMIN)
 export class OrganizerVerificationResolver {
-  constructor(private readonly service: OrganizerVerificationService) {}
+  constructor(
+    private readonly service: OrganizerVerificationService,
+    private readonly storage: StorageService,
+  ) {}
+
+  /** Presign the stored KYC document keys into temporary download URLs for the admin. */
+  @ResolveField(() => [String])
+  documentUrls(@Parent() req: OrganizerVerificationRequestModel): Promise<string[]> {
+    return this.storage.getDownloadUrls(req.documentUrls);
+  }
 
   @Query(() => PaginatedOrganizerVerificationRequests, {
     name: 'adminListOrganizerVerificationRequests',

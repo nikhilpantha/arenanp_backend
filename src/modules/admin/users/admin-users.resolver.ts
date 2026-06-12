@@ -1,11 +1,12 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import type { AuthUser } from '../../../common/types/auth-context';
+import { StorageService } from '../../../storage/storage.service';
 
 import { AdminUsersService } from './admin-users.service';
 import { AdminUser, AdminUserDetail } from './dto/admin-user.model';
@@ -17,7 +18,16 @@ import { UpdateUserRoleInput } from './dto/update-user-role.input';
 @UseGuards(RolesGuard)
 @Roles(UserRole.SUPER_ADMIN)
 export class AdminUsersResolver {
-  constructor(private readonly service: AdminUsersService) {}
+  constructor(
+    private readonly service: AdminUsersService,
+    private readonly storage: StorageService,
+  ) {}
+
+  /** Presign the stored avatar key into a temporary download URL on read. */
+  @ResolveField(() => String, { nullable: true })
+  avatarUrl(@Parent() user: AdminUser): Promise<string | null> {
+    return this.storage.getDownloadUrl(user.avatarUrl);
+  }
 
   @Query(() => PaginatedAdminUsers, {
     name: 'adminListUsers',

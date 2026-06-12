@@ -20,7 +20,8 @@ export class AdminCourt {
   @Field(() => Float) pricePerHour!: number;
   @Field({ nullable: true }) description?: string;
   @Field() isActive!: boolean;
-  @Field(() => [String]) imageUrls!: string[];
+  /** Stored S3 object keys; presigned to download URLs by AdminCourtResolver. */
+  imageUrls!: string[];
   @Field() createdAt!: Date;
 }
 
@@ -41,9 +42,10 @@ export class AdminVenue {
   @Field(() => Float, { nullable: true }) latitude?: number;
   @Field(() => Float, { nullable: true }) longitude?: number;
 
-  @Field({ nullable: true }) coverImageUrl?: string;
-  @Field(() => [String]) imageUrls!: string[];
-  @Field(() => [String]) documentUrls!: string[];
+  // Stored S3 object keys; presigned to download URLs by AdminVenuesResolver.
+  coverImageUrl?: string;
+  imageUrls!: string[];
+  documentUrls!: string[];
 
   @Field(() => [SportStub]) sports!: SportStub[];
   @Field(() => [String]) amenities!: string[];
@@ -69,7 +71,7 @@ export class AdminVenue {
 type CourtWithSport = PrismaCourt & { sport: PrismaSport };
 type VenueSportWithSport = PrismaVenueSport & { sport: PrismaSport };
 type VenueWithRelations = PrismaVenue & {
-  owner: Parameters<typeof mapPrismaUserToAdmin>[0];
+  primaryOwner: Parameters<typeof mapPrismaUserToAdmin>[0];
   reviewer?: Parameters<typeof mapPrismaUserToAdmin>[0] | null;
   courts: CourtWithSport[];
   venueSports: VenueSportWithSport[];
@@ -96,7 +98,7 @@ export function mapPrismaCourtToAdmin(court: CourtWithSport): AdminCourt {
 export function mapPrismaVenueToAdmin(venue: VenueWithRelations): AdminVenue {
   return {
     id: venue.id,
-    owner: mapPrismaUserToAdmin(venue.owner),
+    owner: mapPrismaUserToAdmin(venue.primaryOwner),
     name: venue.name,
     description: venue.description ?? undefined,
     address: venue.address ?? undefined,

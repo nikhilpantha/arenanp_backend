@@ -1,0 +1,214 @@
+// ─── Payments, settlements, refunds, disputes ──────────────────────────────
+
+enum PaymentProvider {
+  ESEWA
+  KHALTI
+  FONEPAY
+  IMEPAY
+  STRIPE
+  BANK_TRANSFER
+  CASH
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum SettlementStatus {
+  PENDING
+  ON_HOLD
+  PAID
+  FAILED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+enum DisputeStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+enum DisputeCategory {
+  PAYMENT
+  VENUE_QUALITY
+  CUSTOMER_BEHAVIOUR
+  SAFETY
+  CANCELLATION
+  OTHER
+}
+
+/// Payment record attached to a Booking. One-to-one — partial / split payments
+/// would need a refactor. Holds the provider-side identifiers + the raw
+/// metadata blob for forensic debugging of failed transactions.
+model Payment {
+  id        String  @id @default(cuid())
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+
+  provider      PaymentProvider
+  providerTxnId String?
+  amount        Decimal         @db.Decimal(10, 2)
+  currency      String          @default("NPR")
+
+  status        PaymentStatus @default(PENDING)
+  failureReason String?
+  paidAt        DateTime?
+
+  metadata Json?
+
+  settlement     Settlement?
+  refundRequests RefundRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([provider])
+  @@index([paidAt])
+  @@map("payments")
+}
+
+/// Per-payment payout owed to a venue. Created at admin discretion (or by the
+/// future payment-success hook) and marked PAID once the bank transfer clears.
+///
+/// Commission rate is snapshotted on the row so historical settlements stay
+/// stable when the platform-wide rate changes (Feature 10 — PlatformSetting).
+model Settlement {
+  id String @id @default(cuid())
+
+  paymentId String  @unique
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  grossAmount              Decimal @db.Decimal(10, 2)
+  commissionPercentage     Decimal @db.Decimal(5, 2)
+  platformCommissionAmount Decimal @db.Decimal(10, 2)
+  netAmount                Decimal @db.Decimal(10, 2)
+  currency                 String  @default("NPR")
+
+  status           SettlementStatus @default(PENDING)
+  paidAt           DateTime?
+  paymentReference String?
+  notes            String?
+
+  markedPaidById String?
+  markedPaidBy   User?   @relation("UserSettlementsMarkedPaid", fields: [markedPaidById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([status])
+  @@index([paidAt])
+  @@map("settlements")
+}
+
+/// Refund request raised by a customer against a Booking / Payment.
+/// `requestedAmount` supports partial refunds; the Settlement / Payment side
+/// flips to REFUNDED or PARTIALLY_REFUNDED only when the refund is PROCESSED.
+model RefundRequest {
+  id String @id @default(cuid())
+
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  userId String
+  user   User   @relation("UserRefundRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  requestedAmount Decimal @db.Decimal(10, 2)
+  currency        String  @default("NPR")
+  reason          String
+
+  status          RefundStatus @default(REQUESTED)
+  rejectionReason String?
+  adminNotes      String?
+
+  approvedById String?
+  approvedBy   User?     @relation("UserRefundRequestsApproved", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime?
+
+  processedById      String?
+  processedBy        User?     @relation("UserRefundRequestsProcessed", fields: [processedById], references: [id], onDelete: SetNull)
+  processedAt        DateTime?
+  processorReference String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([bookingId])
+  @@index([status])
+  @@map("refund_requests")
+}
+
+/// Dispute raised by a customer against a Booking — e.g. quality complaints,
+/// venue issues, safety. Carries a freeform thread of admin notes for context.
+model Dispute {
+  id String @id @default(cuid())
+
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("UserDisputesRaised", fields: [userId], references: [id], onDelete: Cascade)
+
+  subject     String
+  description String
+  category    DisputeCategory @default(OTHER)
+
+  status     DisputeStatus @default(OPEN)
+  resolution String?
+
+  closedById String?
+  closedBy   User?     @relation("UserDisputesClosed", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt   DateTime?
+
+  notes DisputeNote[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([bookingId])
+  @@index([status])
+  @@map("disputes")
+}
+
+/// One entry in a Dispute's admin-note thread.
+model DisputeNote {
+  id String @id @default(cuid())
+
+  disputeId String
+  dispute   Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation("UserDisputeNotes", fields: [authorId], references: [id], onDelete: Cascade)
+
+  body String
+
+  createdAt DateTime @default(now())
+
+  @@index([disputeId])
+  @@map("dispute_notes")
+}

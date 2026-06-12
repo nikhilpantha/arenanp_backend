@@ -13,4 +13,10 @@ export class OtpRequestResult {
 
   @Field({ nullable: true, description: 'Only populated in dev (SMS_PROVIDER=stub).' })
   devCode?: string;
+
+  @Field({
+    nullable: true,
+    description: 'True when this request granted a capability the account did not have yet.',
+  })
+  roleAdded?: boolean;
 }

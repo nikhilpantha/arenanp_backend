@@ -1,5 +1,5 @@
 import { Field, InputType } from '@nestjs/graphql';
-import { IsEmail, IsOptional, IsString, IsUrl, Length } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 
 @InputType()
 export class UpdateProfileInput {
@@ -14,8 +14,10 @@ export class UpdateProfileInput {
   @IsEmail()
   email?: string;
 
-  @Field({ nullable: true })
+  /** S3 object key returned by the `createUploadUrl` mutation (UploadCategory.AVATAR). */
+  @Field({ nullable: true, description: 'S3 object key from createUploadUrl (category AVATAR).' })
   @IsOptional()
-  @IsUrl({ require_tld: false })
+  @IsString()
+  @MaxLength(512)
   avatarUrl?: string;
 }
