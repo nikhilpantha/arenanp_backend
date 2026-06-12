@@ -1,5 +1,5 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
-import { OrganizerStatus, OrganizerVerificationRequest } from '@prisma/client';
+import { CapabilityStatus, OrganizerVerificationRequest } from '@prisma/client';
 
 import '../../../../common/enums';
 import { AdminUser, mapPrismaUserToAdmin } from '../../users/dto/admin-user.model';
@@ -21,9 +21,10 @@ export class OrganizerVerificationRequestModel {
   @Field({ nullable: true }) city?: string;
   @Field({ nullable: true }) bio?: string;
   @Field({ nullable: true }) experience?: string;
-  @Field(() => [String]) documentUrls!: string[];
+  /** Stored S3 object keys; presigned to download URLs by OrganizerVerificationResolver. */
+  documentUrls!: string[];
 
-  @Field(() => OrganizerStatus) status!: OrganizerStatus;
+  @Field(() => CapabilityStatus) status!: CapabilityStatus;
   @Field({ nullable: true }) rejectionReason?: string;
 
   @Field({ nullable: true }) reviewedAt?: Date;

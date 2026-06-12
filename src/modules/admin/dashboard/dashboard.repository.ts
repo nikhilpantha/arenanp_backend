@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import {
-  OrganizerStatus,
+  CapabilityStatus,
+  CapabilityType,
   PaymentStatus,
   Prisma,
   RefundStatus,
   TournamentStatus,
-  VenueOwnerStatus,
   VenueVerificationStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
@@ -27,14 +27,8 @@ export class AdminDashboardRepository {
   }
 
   countPendingOrganizerVerifications(): Promise<number> {
-    return this.prisma.user.count({
-      where: { organizerStatus: OrganizerStatus.PENDING_VERIFICATION },
-    });
-  }
-
-  countPendingVenueOwnerVerifications(): Promise<number> {
-    return this.prisma.user.count({
-      where: { venueOwnerStatus: VenueOwnerStatus.PENDING_VERIFICATION },
+    return this.prisma.userCapability.count({
+      where: { type: CapabilityType.ORGANIZER, status: CapabilityStatus.PENDING_VERIFICATION },
     });
   }
 

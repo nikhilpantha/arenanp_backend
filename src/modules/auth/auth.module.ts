@@ -13,12 +13,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CapabilityGuard } from '../../common/guards/capability.guard';
+import { CapabilitiesModule } from '../capabilities/capabilities.module';
 
 // Force GraphQL enums to be registered before resolvers compile.
 import '../../common/enums';
 
 @Module({
   imports: [
+    CapabilitiesModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],

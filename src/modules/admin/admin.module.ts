@@ -9,11 +9,11 @@ import { AdminUsersService } from './users/admin-users.service';
 import { OrganizerVerificationRepository } from './organizer-verification/organizer-verification.repository';
 import { OrganizerVerificationResolver } from './organizer-verification/organizer-verification.resolver';
 import { OrganizerVerificationService } from './organizer-verification/organizer-verification.service';
-import { VenueOwnerVerificationRepository } from './venue-owner-verification/venue-owner-verification.repository';
-import { VenueOwnerVerificationResolver } from './venue-owner-verification/venue-owner-verification.resolver';
-import { VenueOwnerVerificationService } from './venue-owner-verification/venue-owner-verification.service';
+import { VenueVerificationRepository } from './venue-verification/venue-verification.repository';
+import { VenueVerificationResolver } from './venue-verification/venue-verification.resolver';
+import { VenueVerificationService } from './venue-verification/venue-verification.service';
 import { AdminVenuesRepository } from './venues/admin-venues.repository';
-import { AdminVenuesResolver } from './venues/admin-venues.resolver';
+import { AdminCourtResolver, AdminVenuesResolver } from './venues/admin-venues.resolver';
 import { AdminVenuesService } from './venues/admin-venues.service';
 import { AdminBookingsRepository } from './bookings/admin-bookings.repository';
 import { AdminBookingsResolver } from './bookings/admin-bookings.resolver';
@@ -36,6 +36,8 @@ import { AdminSettingsService } from './settings/admin-settings.service';
 import { AdminSportsRepository } from './sports/admin-sports.repository';
 import { AdminSportsResolver } from './sports/admin-sports.resolver';
 import { AdminSportsService } from './sports/admin-sports.service';
+import { SportStubResolver } from './sports/sport-stub.resolver';
+import { AdminStorageResolver } from './storage/admin-storage.resolver';
 
 /**
  * Super-admin module.
@@ -55,10 +57,11 @@ import { AdminSportsService } from './sports/admin-sports.service';
     OrganizerVerificationResolver,
     OrganizerVerificationService,
     OrganizerVerificationRepository,
-    VenueOwnerVerificationResolver,
-    VenueOwnerVerificationService,
-    VenueOwnerVerificationRepository,
+    VenueVerificationResolver,
+    VenueVerificationService,
+    VenueVerificationRepository,
     AdminVenuesResolver,
+    AdminCourtResolver,
     AdminVenuesService,
     AdminVenuesRepository,
     AdminBookingsResolver,
@@ -83,6 +86,8 @@ import { AdminSportsService } from './sports/admin-sports.service';
     AdminSportsResolver,
     AdminSportsService,
     AdminSportsRepository,
+    SportStubResolver,
+    AdminStorageResolver,
   ],
 })
 export class AdminModule {}

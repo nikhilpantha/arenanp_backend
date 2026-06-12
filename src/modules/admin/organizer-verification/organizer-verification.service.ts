@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrganizerStatus } from '@prisma/client';
+import { CapabilityStatus } from '@prisma/client';
 
 import { buildPageInfo } from '../../../common/dto/pagination.input';
 import type { AuthUser } from '../../../common/types/auth-context';
@@ -45,15 +45,15 @@ export class OrganizerVerificationService {
   ): Promise<OrganizerVerificationRequestModel> {
     const row = await this.repo.findById(input.requestId);
     if (!row) throw new NotFoundException('Organizer verification request not found.');
-    if (row.status !== OrganizerStatus.PENDING_VERIFICATION) {
+    if (row.status !== CapabilityStatus.PENDING_VERIFICATION) {
       throw new BadRequestException(
         `Only PENDING_VERIFICATION requests can be approved (current: ${row.status}).`,
       );
     }
     const updated = await this.repo.transitionRequestAndUser({
       requestId: row.id,
-      nextRequestStatus: OrganizerStatus.APPROVED,
-      nextUserStatus: OrganizerStatus.APPROVED,
+      nextRequestStatus: CapabilityStatus.APPROVED,
+      nextUserStatus: CapabilityStatus.APPROVED,
       reviewedById: actor.id,
       rejectionReason: null,
     });
@@ -66,15 +66,15 @@ export class OrganizerVerificationService {
   ): Promise<OrganizerVerificationRequestModel> {
     const row = await this.repo.findById(input.requestId);
     if (!row) throw new NotFoundException('Organizer verification request not found.');
-    if (row.status !== OrganizerStatus.PENDING_VERIFICATION) {
+    if (row.status !== CapabilityStatus.PENDING_VERIFICATION) {
       throw new BadRequestException(
         `Only PENDING_VERIFICATION requests can be rejected (current: ${row.status}).`,
       );
     }
     const updated = await this.repo.transitionRequestAndUser({
       requestId: row.id,
-      nextRequestStatus: OrganizerStatus.REJECTED,
-      nextUserStatus: OrganizerStatus.REJECTED,
+      nextRequestStatus: CapabilityStatus.REJECTED,
+      nextUserStatus: CapabilityStatus.REJECTED,
       reviewedById: actor.id,
       rejectionReason: input.reason.trim(),
     });
@@ -89,13 +89,13 @@ export class OrganizerVerificationService {
     if (userId === actor.id) {
       throw new BadRequestException('You cannot suspend your own organizer access.');
     }
-    const updated = await this.repo.setUserOrganizerStatus(userId, OrganizerStatus.SUSPENDED);
+    const updated = await this.repo.setUserCapabilityStatus(userId, CapabilityStatus.SUSPENDED);
     return mapPrismaUserToAdmin(updated);
   }
 
   /** Reinstate a previously suspended organizer back to APPROVED. */
   async reinstateAccess(userId: string): Promise<AdminUser> {
-    const updated = await this.repo.setUserOrganizerStatus(userId, OrganizerStatus.APPROVED);
+    const updated = await this.repo.setUserCapabilityStatus(userId, CapabilityStatus.APPROVED);
     return mapPrismaUserToAdmin(updated);
   }
 }

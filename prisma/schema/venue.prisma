@@ -1,0 +1,182 @@
+// ─── Venue + bookable surfaces ──────────────────────────────────────────────
+
+/// Admin-side moderation status of a *single Venue listing* (distinct from the
+/// account-level VENUE capability gate). PENDING until approved; SUSPENDED hides
+/// it from the marketplace.
+enum VenueVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+/// A physical venue. `ownedVenues` relation links the primary owner (billing /
+/// canonical contact); operational access is governed by VenueMembership.
+/// `verificationStatus` is the per-listing admin moderation gate.
+model Venue {
+  id             String @id @default(cuid())
+  primaryOwnerId String
+  primaryOwner   User   @relation("UserOwnedVenues", fields: [primaryOwnerId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  address   String?
+  city      String?
+  country   String?  @default("Nepal")
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+
+  coverImageUrl String?
+  imageUrls     String[] @default([])
+  documentUrls  String[] @default([])
+
+  amenities String[] @default([])
+  /// Extra paid/free services, e.g. [{ "name": "Bib rental", "price": 50 }].
+  additionalServices Json?
+
+  /// Operating hours (venue-local "HH:mm"), used to bound bookable slots.
+  openTime  String @default("06:00")
+  closeTime String @default("22:00")
+
+  contactEmail String?
+  contactPhone String?
+
+  verificationStatus VenueVerificationStatus @default(PENDING)
+  rejectionReason    String?
+
+  isFeatured Boolean   @default(false)
+  featuredAt DateTime?
+
+  reviewedById String?
+  reviewer     User?     @relation("UserVenuesReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  memberships VenueMembership[]
+  courts      Court[]
+  bookings    Booking[]
+  settlements Settlement[]
+  tournaments Tournament[]
+  matches     Match[]
+  venueSports VenueSport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([verificationStatus])
+  @@index([city])
+  @@index([isFeatured])
+  @@index([primaryOwnerId])
+  @@map("venues")
+}
+
+/// A bookable surface within a venue (court / ground / pitch). Pricing and
+/// activation flag live here so a venue can have multiple sport types and
+/// individually disabled courts without affecting the venue's verification.
+model Court {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  name         String
+  sportId      String
+  sport        Sport    @relation(fields: [sportId], references: [id], onDelete: Restrict)
+  pricePerHour Decimal  @db.Decimal(10, 2)
+  /// Slot length in minutes (e.g. 60). Drives slot generation for bookings.
+  slotMinutes  Int      @default(60)
+  /// Surface features, e.g. ["Indoor", "Floodlights"].
+  features     String[] @default([])
+  description  String?
+  isActive     Boolean  @default(true)
+  imageUrls    String[] @default([])
+
+  bookings Booking[]
+  matches  Match[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([sportId])
+  @@map("courts")
+}
+
+/// Platform-managed catalogue of sports. The admin manages this list at
+/// /admin/sports. Every Court / Tournament FK references one of these rows,
+/// every Venue can offer many via the `venue_sports` junction, and only sports
+/// with `isActive = true` should appear in the public marketplace filters.
+model Sport {
+  id           String  @id @default(cuid())
+  slug         String  @unique
+  name         String
+  iconUrl      String?
+  description  String?
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
+  /// Amenity presets an owner can toggle when offering this sport (e.g.
+  /// ["Indoor", "Floodlights", "5-a-side"]). Admin-managed; the app shows these
+  /// as selectable chips during venue setup.
+  features     String[] @default([])
+
+  createdById String?
+  createdBy   User?   @relation("UserSportsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  venueSports VenueSport[]
+  courts      Court[]
+  tournaments Tournament[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, displayOrder])
+  @@map("sports")
+}
+
+/// Many-to-many junction between Venue and Sport. A venue lists every sport
+/// it offers here; individual Courts still FK directly to the specific Sport
+/// they host.
+model VenueSport {
+  venueId String
+  sportId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  sport   Sport  @relation(fields: [sportId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([venueId, sportId])
+  @@index([sportId])
+  @@map("venue_sports")
+}
+
+/// Admin-issued invitation that lets a venue operator set their password and
+/// finish onboarding without going through the public KYC submission flow.
+///
+/// The link the admin sends contains a token of the form `<id>.<secret>`.
+/// Only the argon2 hash of `secret` is stored — the raw token is sent in the
+/// email and shown once (in dev) to the admin who issued it. Single-use:
+/// `acceptedAt` is set when consumed.
+model VenueInvitation {
+  id String @id @default(cuid())
+
+  email       String
+  fullName    String?
+  phoneNumber String?
+
+  tokenHash  String
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  invitedById String
+  invitedBy   User   @relation("UserVenueInvitationsCreated", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  createdUserId String?
+  createdUser   User?   @relation("UserVenueInvitationsAccepted", fields: [createdUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([acceptedAt])
+  @@map("venue_invitations")
+}

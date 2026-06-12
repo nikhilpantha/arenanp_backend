@@ -5,6 +5,13 @@ import { RedisService } from '../../redis/redis.service';
 import { REDIS_KEYS } from '../../common/constants';
 import type { AppConfig } from '../../config/app.config';
 
+/**
+ * Dev master OTP — always accepted when SMS_PROVIDER=stub, so you can sign in
+ * without reading the generated code. Strictly gated to the stub provider, so it
+ * is impossible to use against a real SMS provider in production.
+ */
+const DEV_MASTER_OTP = '123456';
+
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
@@ -57,6 +64,13 @@ export class OtpService {
    * Throws on miss / mismatch / too-many-attempts.
    */
   async verify(phoneNumber: string, code: string): Promise<void> {
+    // Dev master code: accepted forever in stub mode (no expiry / attempt limits).
+    if (this.sms.provider === 'stub' && code === DEV_MASTER_OTP) {
+      await this.redis.del(REDIS_KEYS.otpCode(phoneNumber));
+      await this.redis.del(REDIS_KEYS.otpAttempts(phoneNumber));
+      return;
+    }
+
     const stored = await this.redis.get(REDIS_KEYS.otpCode(phoneNumber));
     if (!stored) {
       throw new BadRequestException('OTP expired or never requested. Request a new one.');

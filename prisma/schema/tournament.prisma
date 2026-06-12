@@ -1,0 +1,175 @@
+// ─── Tournaments ────────────────────────────────────────────────────────────
+
+enum TournamentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+  CANCELLED
+}
+
+enum TournamentVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum TournamentRegistrationStatus {
+  REGISTERED
+  CONFIRMED
+  WITHDRAWN
+  REJECTED
+}
+
+enum MatchStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/// A multi-team tournament organised on the platform. The flow is:
+///   DRAFT -> PENDING_APPROVAL -> APPROVED -> ACTIVE -> COMPLETED
+/// SUSPENDED / CANCELLED are terminal sinks an admin can move to at any time.
+///
+/// Tournament-side payments live inline on `TournamentRegistration` (entry
+/// fees are a different beast from booking payments and don't share the
+/// Settlement workflow).
+model Tournament {
+  id String @id @default(cuid())
+
+  organizerId String
+  organizer   User   @relation("UserTournamentsOrganized", fields: [organizerId], references: [id], onDelete: Cascade)
+
+  venueId String?
+  venue   Venue?  @relation(fields: [venueId], references: [id], onDelete: SetNull)
+
+  name        String
+  slug        String  @unique
+  description String?
+  sportId     String
+  sport       Sport   @relation(fields: [sportId], references: [id], onDelete: Restrict)
+  city        String?
+
+  startDate            DateTime
+  endDate              DateTime
+  registrationDeadline DateTime?
+
+  maxTeams Int?
+  minTeams Int?
+
+  entryFee  Decimal @default(0) @db.Decimal(10, 2)
+  prizePool Decimal @default(0) @db.Decimal(12, 2)
+  currency  String  @default("NPR")
+
+  coverImageUrl String?
+  imageUrls     String[] @default([])
+  rulesText     String?
+
+  status     TournamentStatus     @default(DRAFT)
+  visibility TournamentVisibility @default(PUBLIC)
+
+  rejectionReason  String?
+  suspensionReason String?
+
+  approvedById String?
+  approvedBy   User?     @relation("UserTournamentsReviewed", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime?
+
+  closedById String?
+  closedBy   User?     @relation("UserTournamentsClosed", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt   DateTime?
+
+  registrations TournamentRegistration[]
+  matches       Match[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizerId])
+  @@index([status])
+  @@index([visibility])
+  @@index([sportId])
+  @@index([city])
+  @@index([startDate])
+  @@map("tournaments")
+}
+
+/// A team's registration in a tournament. Carries the team's contact details,
+/// the inline entry-fee payment fields, and its `registrationStatus`.
+model TournamentRegistration {
+  id String @id @default(cuid())
+
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  captainUserId String?
+  captain       User?   @relation("UserTournamentRegistrations", fields: [captainUserId], references: [id], onDelete: SetNull)
+
+  teamName     String
+  contactEmail String?
+  contactPhone String?
+
+  status TournamentRegistrationStatus @default(REGISTERED)
+
+  // Inline entry-fee payment fields. Tournament payments don't go through the
+  // Settlement workflow — they're tracked here for the admin payments summary.
+  paymentStatus    PaymentStatus    @default(PENDING)
+  paymentProvider  PaymentProvider?
+  paymentReference String?
+  amountPaid       Decimal          @default(0) @db.Decimal(10, 2)
+  paidAt           DateTime?
+
+  matchesAsTeam1 Match[] @relation("MatchTeam1")
+  matchesAsTeam2 Match[] @relation("MatchTeam2")
+  matchesWon     Match[] @relation("MatchWinner")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tournamentId])
+  @@index([status])
+  @@map("tournament_registrations")
+}
+
+/// A single match within a Tournament. `round` + `matchNumber` lets the
+/// frontend reconstruct the bracket without storing it as a tree.
+model Match {
+  id String @id @default(cuid())
+
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  round       Int
+  matchNumber Int
+
+  team1Id String?
+  team1   TournamentRegistration? @relation("MatchTeam1", fields: [team1Id], references: [id], onDelete: SetNull)
+  team2Id String?
+  team2   TournamentRegistration? @relation("MatchTeam2", fields: [team2Id], references: [id], onDelete: SetNull)
+
+  team1Score Int?
+  team2Score Int?
+
+  winnerRegistrationId String?
+  winner               TournamentRegistration? @relation("MatchWinner", fields: [winnerRegistrationId], references: [id], onDelete: SetNull)
+
+  scheduledAt DateTime?
+
+  venueId String?
+  venue   Venue?  @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  courtId String?
+  court   Court?  @relation(fields: [courtId], references: [id], onDelete: SetNull)
+
+  status MatchStatus @default(SCHEDULED)
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tournamentId, round, matchNumber])
+  @@index([status])
+  @@map("matches")
+}

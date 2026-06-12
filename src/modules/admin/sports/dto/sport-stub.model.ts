@@ -8,7 +8,8 @@ export class SportStub {
   @Field(() => ID) id!: string;
   @Field() slug!: string;
   @Field() name!: string;
-  @Field({ nullable: true }) iconUrl?: string;
+  /** Stored S3 object key; presigned to a download URL by SportStubResolver. */
+  iconUrl?: string;
 }
 
 export function mapSportStub(s: Pick<PrismaSport, 'id' | 'slug' | 'name' | 'iconUrl'>): SportStub {
