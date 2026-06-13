@@ -7,7 +7,7 @@ export class UsersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { id } });
+    return this.prisma.user.findUnique({ where: { id }, include: { capabilities: true } });
   }
 
   findByPhone(phoneNumber: string): Promise<User | null> {
@@ -19,6 +19,6 @@ export class UsersRepository {
   }
 
   update(id: string, data: Prisma.UserUpdateInput): Promise<User> {
-    return this.prisma.user.update({ where: { id }, data });
+    return this.prisma.user.update({ where: { id }, data, include: { capabilities: true } });
   }
 }

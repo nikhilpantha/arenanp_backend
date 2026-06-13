@@ -26,7 +26,6 @@ export class AdminDashboardService {
     const [
       totalUsers,
       pendingOrganizerVerifications,
-      pendingVenueOwnerVerifications,
       totalVenues,
       pendingVenueApprovals,
       pendingRefunds,
@@ -43,7 +42,6 @@ export class AdminDashboardService {
     ] = await Promise.all([
       this.repo.countUsers(),
       this.repo.countPendingOrganizerVerifications(),
-      this.repo.countPendingVenueOwnerVerifications(),
       this.repo.countApprovedVenues(),
       this.repo.countPendingVenueApprovals(),
       this.repo.countPendingRefunds(),
@@ -65,7 +63,6 @@ export class AdminDashboardService {
       totalBookings,
       totalRevenue,
       pendingOrganizerVerifications,
-      pendingVenueOwnerVerifications,
       pendingVenueApprovals,
       pendingRefunds,
       activeTournaments,
@@ -86,7 +83,7 @@ export class AdminDashboardService {
 
     const recentBookings: RecentBookingItem[] = recentBookingsRows.map((b) => ({
       id: b.id,
-      userFullName: b.user.fullName ?? undefined,
+      userFullName: b.user?.fullName ?? b.customerName ?? undefined,
       venueName: b.venue.name,
       sport: b.court.sport.name,
       amount: Number(b.total.toString()),

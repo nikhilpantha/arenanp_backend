@@ -5,8 +5,8 @@ import { SortOrder } from '../users/dto/admin-user.model';
 import { ListAdminVenuesInput } from './dto/list-admin-venues.input';
 
 const VENUE_INCLUDES = {
-  owner: true,
-  reviewer: true,
+  primaryOwner: { include: { capabilities: true } },
+  reviewer: { include: { capabilities: true } },
   courts: {
     orderBy: { createdAt: 'asc' },
     include: { sport: true },
@@ -47,8 +47,8 @@ export class AdminVenuesRepository {
       where.OR = [
         { name: { contains: q, mode: 'insensitive' } },
         { city: { contains: q, mode: 'insensitive' } },
-        { owner: { fullName: { contains: q, mode: 'insensitive' } } },
-        { owner: { phoneNumber: { contains: q, mode: 'insensitive' } } },
+        { primaryOwner: { fullName: { contains: q, mode: 'insensitive' } } },
+        { primaryOwner: { phoneNumber: { contains: q, mode: 'insensitive' } } },
       ];
     }
 

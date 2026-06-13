@@ -1,8 +1,21 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
-import { User as PrismaUser, OrganizerStatus, UserRole, VenueOwnerStatus } from '@prisma/client';
+import {
+  CapabilityStatus,
+  CapabilityType,
+  User as PrismaUser,
+  UserCapability,
+  UserRole,
+} from '@prisma/client';
 
-// Side-effect import: registers UserRole / OrganizerStatus / VenueOwnerStatus with GraphQL.
+// Side-effect import: registers UserRole / CapabilityType / CapabilityStatus with GraphQL.
 import '../../../common/enums';
+
+/** One capability grant on the public user model. */
+@ObjectType()
+export class UserCapabilityModel {
+  @Field(() => CapabilityType) type!: CapabilityType;
+  @Field(() => CapabilityStatus) status!: CapabilityStatus;
+}
 
 @ObjectType()
 export class User {
@@ -21,13 +34,21 @@ export class User {
   @Field(() => UserRole)
   role!: UserRole;
 
-  @Field(() => OrganizerStatus)
-  organizerStatus!: OrganizerStatus;
+  @Field(() => [UserCapabilityModel])
+  capabilities!: UserCapabilityModel[];
 
-  @Field(() => VenueOwnerStatus)
-  venueOwnerStatus!: VenueOwnerStatus;
+  /** Convenience: VENUE capability status, derived from `capabilities`. */
+  @Field(() => CapabilityStatus)
+  venueStatus!: CapabilityStatus;
 
-  @Field({ nullable: true })
+  /** Convenience: ORGANIZER capability status, derived from `capabilities`. */
+  @Field(() => CapabilityStatus)
+  organizerStatus!: CapabilityStatus;
+
+  /**
+   * Stored S3 object *key* (not a URL). Exposed to GraphQL as `avatarUrl` via a
+   * field resolver on UsersResolver that presigns it into a temporary download URL.
+   */
   avatarUrl?: string;
 
   @Field()
@@ -43,15 +64,21 @@ export class User {
   updatedAt!: Date;
 }
 
-export function mapUserToGraphql(user: PrismaUser): User {
+type PrismaUserWithCapabilities = PrismaUser & { capabilities?: UserCapability[] };
+
+export function mapUserToGraphql(user: PrismaUserWithCapabilities): User {
+  const caps = user.capabilities ?? [];
+  const statusOf = (type: CapabilityType): CapabilityStatus =>
+    caps.find((c) => c.type === type)?.status ?? CapabilityStatus.NOT_REQUESTED;
   return {
     id: user.id,
     fullName: user.fullName ?? undefined,
     phoneNumber: user.phoneNumber,
     email: user.email ?? undefined,
     role: user.role,
-    organizerStatus: user.organizerStatus,
-    venueOwnerStatus: user.venueOwnerStatus,
+    capabilities: caps.map((c) => ({ type: c.type, status: c.status })),
+    venueStatus: statusOf(CapabilityType.VENUE),
+    organizerStatus: statusOf(CapabilityType.ORGANIZER),
     avatarUrl: user.avatarUrl ?? undefined,
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt ?? undefined,

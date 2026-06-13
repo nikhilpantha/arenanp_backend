@@ -2,12 +2,23 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
-input AcceptVenueOwnerInvitationInput {
+input AcceptVenueInvitationInput {
   """New password — 8 characters minimum."""
   password: String!
 
   """The token from the email link (format: <id>.<secret>)."""
   token: String!
+}
+
+input AdditionalServiceInput {
+  name: String!
+  price: Float
+}
+
+"""An extra paid/free service a venue offers."""
+type AdditionalServiceModel {
+  name: String!
+  price: Float
 }
 
 """
@@ -21,19 +32,23 @@ type AdminBooking {
   completedAt: DateTime
   court: AdminBookingCourtStub!
   createdAt: DateTime!
+  customerName: String
+  customerPhone: String
+  customerType: CustomerType!
   durationMinutes: Int!
   endAt: DateTime!
   id: ID!
   payment: AdminBookingPayment
   pricePerHour: Float!
   serviceFee: Float!
+  source: BookingSource!
   startAt: DateTime!
   status: BookingStatus!
   statusEvents: [AdminBookingStatusEvent!]!
   subtotal: Float!
   total: Float!
   updatedAt: DateTime!
-  user: AdminUser!
+  user: AdminUser
   venue: AdminBookingVenueStub!
 }
 
@@ -94,7 +109,6 @@ type AdminDashboardKpis {
   pendingOrganizerVerifications: Int!
   pendingRefunds: Int!
   pendingVenueApprovals: Int!
-  pendingVenueOwnerVerifications: Int!
   todayBookings: Int!
   totalBookings: Int!
   totalRevenue: Float!
@@ -252,6 +266,9 @@ type AdminSport {
   createdBy: AdminUser
   description: String
   displayOrder: Int!
+
+  """Amenity presets offered for this sport."""
+  features: [String!]!
   iconUrl: String
   id: ID!
   isActive: Boolean!
@@ -350,17 +367,18 @@ type AdminTournamentVenueStub {
 
 type AdminUser {
   avatarUrl: String
+  capabilities: [AdminUserCapability!]!
   createdAt: DateTime!
   email: String
   fullName: String
   id: ID!
   isActive: Boolean!
   lastLoginAt: DateTime
-  organizerStatus: OrganizerStatus!
+  organizerStatus: CapabilityStatus!
   phoneNumber: String!
   role: UserRole!
   updatedAt: DateTime!
-  venueOwnerStatus: VenueOwnerStatus!
+  venueStatus: CapabilityStatus!
 }
 
 """Compact booking summary for the user-detail drawer."""
@@ -371,6 +389,11 @@ type AdminUserBookingSummary {
   sport: String
   status: String!
   venueName: String
+}
+
+type AdminUserCapability {
+  status: CapabilityStatus!
+  type: CapabilityType!
 }
 
 """
@@ -458,7 +481,7 @@ input ApproveTournamentInput {
   tournamentId: ID!
 }
 
-input ApproveVenueOwnerVerificationInput {
+input ApproveVenueVerificationInput {
   """Optional internal note. Not surfaced to the requester."""
   note: String
   requestId: ID!
@@ -471,15 +494,70 @@ type AuthPayload {
   user: User!
 }
 
+"""A court booking as managed from the venue panel."""
+type BookingModel {
+  amountPaid: Float!
+  courtId: ID!
+  courtName: String!
+  createdAt: DateTime!
+  customerName: String
+  customerPhone: String
+  customerType: CustomerType!
+  discountAmount: Float!
+  durationMinutes: Int!
+  endAt: DateTime!
+  freeGame: Boolean!
+  id: ID!
+  notes: String
+  paymentMethod: PaymentProvider
+  paymentStatus: BookingPaymentStatus!
+  pricePerHour: Float!
+  source: BookingSource!
+  sport: SportStub!
+  startAt: DateTime!
+  status: BookingStatus!
+  subtotal: Float!
+  total: Float!
+}
+
+"""Venue-side payment state of a booking — PAID, PENDING or PARTIAL."""
+enum BookingPaymentStatus {
+  PAID
+  PARTIAL
+  PENDING
+}
+
+"""Bookings time window: TODAY or UPCOMING."""
+enum BookingScope {
+  TODAY
+  UPCOMING
+}
+
+"""How the booking was created — WALK_IN, ONLINE or SUBSCRIPTION."""
+enum BookingSource {
+  ONLINE
+  SUBSCRIPTION
+  WALK_IN
+}
+
 """
 Booking lifecycle. PENDING_PAYMENT -> CONFIRMED -> COMPLETED, with CANCELLED / NO_SHOW as terminal branches.
 """
 enum BookingStatus {
   CANCELLED
+  CHECKED_IN
   COMPLETED
   CONFIRMED
   NO_SHOW
   PENDING_PAYMENT
+}
+
+"""Venue manage actions: CHECKED_IN, COMPLETED, NO_SHOW, CANCELLED."""
+enum BookingStatusAction {
+  CANCELLED
+  CHECKED_IN
+  COMPLETED
+  NO_SHOW
 }
 
 type BookingTrendPoint {
@@ -498,6 +576,27 @@ input CancelTournamentInput {
   """Reason shown to organizer + registered teams."""
   reason: String!
   tournamentId: ID!
+}
+
+"""
+Lifecycle of a capability application, shared by every CapabilityType. Approved grants the capability.
+"""
+enum CapabilityStatus {
+  APPROVED
+  NOT_REQUESTED
+  PENDING_VERIFICATION
+  REJECTED
+  SUSPENDED
+}
+
+"""
+What a user can be verified as on the platform (VENUE, ORGANIZER, COACH). Additive — a user may hold several.
+"""
+enum CapabilityType {
+  COACH
+  ORGANIZER
+  PLAYER
+  VENUE
 }
 
 """
@@ -523,7 +622,7 @@ input CreateAdminNoteOnDisputeInput {
 Returned right after an invitation is created. `setupUrl` is only populated for the stub mail provider so dev admins can click straight through.
 """
 type CreateInvitationResult {
-  invitation: VenueOwnerInvitation!
+  invitation: VenueInvitation!
 
   """Only set when MAIL_PROVIDER=stub."""
   setupUrl: String
@@ -532,6 +631,9 @@ type CreateInvitationResult {
 input CreateSportInput {
   description: String
   displayOrder: Int! = 0
+
+  """Amenity presets for this sport."""
+  features: [String!]! = []
   iconUrl: String
   isActive: Boolean! = true
 
@@ -542,6 +644,47 @@ input CreateSportInput {
   URL-safe slug. Auto-generated from `name` if omitted. Lowercase letters, digits and hyphens only.
   """
   slug: String
+}
+
+"""Ask the backend for a presigned URL to upload one file directly to S3."""
+input CreateUploadUrlInput {
+  """What the file is — fixes the S3 prefix and accepted types."""
+  category: UploadCategory!
+
+  """
+  MIME type of the file, e.g. "image/jpeg". Must match the category and the PUT Content-Type header.
+  """
+  contentType: String!
+
+  """
+  Original filename — optional, used only to derive the extension when the MIME is ambiguous.
+  """
+  filename: String
+}
+
+input CreateVenueBookingInput {
+  amountPaid: Float
+  courtId: ID!
+  customerName: String!
+  customerPhone: String
+  customerType: CustomerType! = INDIVIDUAL
+  discountAmount: Float
+  durationMinutes: Int! = 60
+  freeGame: Boolean! = false
+  notes: String
+  paymentMethod: PaymentProvider
+  paymentStatus: BookingPaymentStatus! = PENDING
+
+  """Start time (ISO 8601)."""
+  startAt: String!
+  venueId: ID!
+}
+
+"""Who holds a booking — TEAM, INDIVIDUAL or CLUB."""
+enum CustomerType {
+  CLUB
+  INDIVIDUAL
+  TEAM
 }
 
 """
@@ -578,7 +721,7 @@ type InvitationVerification {
   valid: Boolean!
 }
 
-input InviteVenueOwnerInput {
+input InviteVenueInput {
   """Where the setup link will be sent."""
   email: String!
 
@@ -672,7 +815,9 @@ input ListAdminTournamentsInput {
 input ListAdminUsersInput {
   """true = only active users, false = only suspended."""
   isActive: Boolean
-  organizerStatus: OrganizerStatus
+
+  """Filter by ORGANIZER capability status."""
+  organizerStatus: CapabilityStatus
   pagination: PaginationInput! = {page: 1, pageSize: 20}
   role: UserRole
 
@@ -680,7 +825,9 @@ input ListAdminUsersInput {
   search: String
   sortBy: AdminUserSortField! = CREATED_AT
   sortOrder: SortOrder! = DESC
-  venueOwnerStatus: VenueOwnerStatus
+
+  """Filter by VENUE capability status."""
+  venueStatus: CapabilityStatus
 }
 
 input ListAdminVenuesInput {
@@ -708,10 +855,20 @@ input ListOrganizerVerificationRequestsInput {
   sortOrder: SortOrder! = DESC
 
   """Filter by request status. Defaults to all when omitted."""
-  status: OrganizerStatus
+  status: CapabilityStatus
 }
 
-input ListVenueOwnerVerificationRequestsInput {
+input ListVenueBookingsInput {
+  """Specific day (yyyy-mm-dd). Overrides scope when set."""
+  date: String
+  scope: BookingScope
+
+  """Filter by sport slug."""
+  sportSlug: String
+  venueId: ID!
+}
+
+input ListVenueVerificationRequestsInput {
   pagination: PaginationInput! = {page: 1, pageSize: 20}
 
   """Match on user fullName, phoneNumber, email, businessName or panNumber."""
@@ -719,12 +876,17 @@ input ListVenueOwnerVerificationRequestsInput {
   sortOrder: SortOrder! = DESC
 
   """Filter by request status. Defaults to all when omitted."""
-  status: VenueOwnerStatus
+  status: CapabilityStatus
 }
 
 input LoginWithEmailInput {
   email: String!
   password: String!
+}
+
+input LoginWithPhoneInput {
+  password: String!
+  phoneNumber: String!
 }
 
 input MarkBookingCompletedInput {
@@ -763,11 +925,20 @@ enum MatchStatus {
   SCHEDULED
 }
 
+"""
+Lifecycle of a venue membership (staff seat): INVITED, ACTIVE, SUSPENDED.
+"""
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
 type Mutation {
   """
   Set the new account’s password, mark the invitation accepted, and return an access token so the user is signed in immediately.
   """
-  acceptVenueOwnerInvitation(input: AcceptVenueOwnerInvitationInput!): AuthPayload!
+  acceptVenueInvitation(input: AcceptVenueInvitationInput!): AuthPayload!
 
   """Approve a pending organizer-verification request."""
   adminApproveOrganizerVerification(input: ApproveOrganizerVerificationInput!): OrganizerVerificationRequestModel!
@@ -775,8 +946,8 @@ type Mutation {
   adminApproveTournament(input: ApproveTournamentInput!): AdminTournament!
   adminApproveVenue(venueId: ID!): AdminVenue!
 
-  """Approve a pending venue-owner-verification request."""
-  adminApproveVenueOwnerVerification(input: ApproveVenueOwnerVerificationInput!): VenueOwnerVerificationRequestModel!
+  """Approve a pending venue-verification request."""
+  adminApproveVenueVerification(input: ApproveVenueVerificationInput!): VenueVerificationRequestModel!
 
   """Cancel a booking on the user’s behalf. A reason is required."""
   adminCancelBooking(input: CancelBookingByAdminInput!): AdminBooking!
@@ -787,15 +958,20 @@ type Mutation {
   adminCreateSport(input: CreateSportInput!): AdminSport!
 
   """
+  Get a presigned URL to upload an admin-managed asset (e.g. a sport icon) directly to S3.
+  """
+  adminCreateUploadUrl(input: CreateUploadUrlInput!): PresignedUpload!
+
+  """
   Permanently remove a sport. Blocked when courts / tournaments / venue offerings still reference it — deactivate instead.
   """
   adminDeleteSport(id: ID!): Boolean!
   adminFeatureVenue(venueId: ID!): AdminVenue!
 
   """
-  Create a venue-owner invitation, send the email, and return the resulting row. In dev (stub mailer) the setup URL is returned so admins can click straight through.
+  Create a venue invitation, send the email, and return the resulting row. In dev (stub mailer) the setup URL is returned so admins can click straight through.
   """
-  adminInviteVenueOwner(input: InviteVenueOwnerInput!): CreateInvitationResult!
+  adminInviteVenue(input: InviteVenueInput!): CreateInvitationResult!
 
   """Mark a paid / CONFIRMED booking as COMPLETED."""
   adminMarkBookingCompleted(input: MarkBookingCompletedInput!): AdminBooking!
@@ -813,22 +989,22 @@ type Mutation {
   """Reinstate organizer access on a previously-suspended user."""
   adminReinstateOrganizerAccess(userId: ID!): AdminUser!
 
-  """Reinstate venue-owner access on a previously-suspended user."""
-  adminReinstateVenueOwnerAccess(userId: ID!): AdminUser!
+  """Reinstate venue access on a previously-suspended user."""
+  adminReinstateVenueAccess(userId: ID!): AdminUser!
 
   """Reject a pending organizer-verification request with a reason."""
   adminRejectOrganizerVerification(input: RejectOrganizerVerificationInput!): OrganizerVerificationRequestModel!
   adminRejectRefund(input: RejectRefundInput!): AdminRefundRequest!
   adminRejectVenue(input: RejectVenueInput!): AdminVenue!
 
-  """Reject a pending venue-owner-verification request with a reason."""
-  adminRejectVenueOwnerVerification(input: RejectVenueOwnerVerificationInput!): VenueOwnerVerificationRequestModel!
+  """Reject a pending venue-verification request with a reason."""
+  adminRejectVenueVerification(input: RejectVenueVerificationInput!): VenueVerificationRequestModel!
 
   """Rotate the token, push the expiry forward and resend the email."""
-  adminResendVenueOwnerInvitation(input: ResendVenueOwnerInvitationInput!): CreateInvitationResult!
+  adminResendVenueInvitation(input: ResendVenueInvitationInput!): CreateInvitationResult!
 
   """Delete a pending invitation so its link stops working."""
-  adminRevokeVenueOwnerInvitation(input: RevokeVenueOwnerInvitationInput!): Boolean!
+  adminRevokeVenueInvitation(input: RevokeVenueInvitationInput!): Boolean!
 
   """Suspend organizer access on a user (organizerStatus -> SUSPENDED)."""
   adminSuspendOrganizerAccess(userId: ID!): AdminUser!
@@ -838,8 +1014,8 @@ type Mutation {
   adminSuspendUser(id: ID!): AdminUser!
   adminSuspendVenue(input: SuspendVenueInput!): AdminVenue!
 
-  """Suspend venue-owner access on a user (venueOwnerStatus -> SUSPENDED)."""
-  adminSuspendVenueOwnerAccess(userId: ID!): AdminUser!
+  """Suspend venue access on a user (venueStatus -> SUSPENDED)."""
+  adminSuspendVenueAccess(userId: ID!): AdminUser!
   adminUnfeatureVenue(venueId: ID!): AdminVenue!
 
   """Reactivate a previously suspended user (sets isActive=true)."""
@@ -869,34 +1045,67 @@ type Mutation {
   adminUpdateVenueVerificationStatus(input: UpdateVenueVerificationStatusInput!): AdminVenue!
 
   """
+  Get a presigned URL to upload one file (avatar, venue image/document, etc.) directly to S3.
+  """
+  createUploadUrl(input: CreateUploadUrlInput!): PresignedUpload!
+
+  """Create a walk-in / manual booking from the venue panel."""
+  createVenueBooking(input: CreateVenueBookingInput!): BookingModel!
+
+  """
   Email + password login. Used by admin / venue-management web panels. Mobile users use OTP.
   """
   loginWithEmail(input: LoginWithEmailInput!): AuthPayload!
 
-  """Send an OTP to the given phone. Creates a stub user on first request."""
-  requestOtp(input: RequestOtpInput!): OtpRequestResult!
+  """
+  Phone + password login (mobile). Only works after the phone has been verified via OTP once.
+  """
+  loginWithPhone(input: LoginWithPhoneInput!): AuthPayload!
+
+  """Update a booking’s payment state (paid / pending / partial)."""
+  recordVenueBookingPayment(input: RecordBookingPaymentInput!): BookingModel!
+
+  """Send an OTP and ensure the ORGANIZER role for this phone."""
+  requestOrganizerOtp(input: RequestOtpInput!): OtpRequestResult!
+
+  """
+  Send an OTP and ensure the PLAYER role for this phone (granted instantly).
+  """
+  requestPlayerOtp(input: RequestOtpInput!): OtpRequestResult!
+
+  """Send an OTP and ensure the VENUE (owner) role for this phone."""
+  requestVenueOtp(input: RequestOtpInput!): OtpRequestResult!
+
+  """
+  Check in / complete / no-show / cancel a booking (writes a status event).
+  """
+  setVenueBookingStatus(input: SetBookingStatusInput!): BookingModel!
+
+  """
+  Replace the venue's sports + courts. Requires the venue:edit permission.
+  """
+  setVenueServices(input: SetVenueServicesInput!): VenueModel!
 
   """
   Sign the caller out by bumping their tokenVersion. Every previously-issued access token is rejected on the next request.
   """
   signOut: Boolean!
 
+  """
+  Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. The VENUE capability is granted at signup and untouched here.
+  """
+  submitVenue(input: SubmitVenueInput!): VenueModel!
+
   """Update the current user profile (name / email / avatar)."""
   updateProfile(input: UpdateProfileInput!): User!
 
+  """
+  Update editable venue profile fields. Requires the venue:edit permission.
+  """
+  updateVenueProfile(input: UpdateVenueProfileInput!): VenueModel!
+
   """Verify an OTP and return an access token."""
   verifyOtp(input: VerifyOtpInput!): AuthPayload!
-}
-
-"""
-Lifecycle of a user requesting tournament-organizer access. Approved organizers can create tournaments.
-"""
-enum OrganizerStatus {
-  APPROVED
-  NOT_REQUESTED
-  PENDING_VERIFICATION
-  REJECTED
-  SUSPENDED
 }
 
 type OrganizerVerificationRequestModel {
@@ -912,7 +1121,7 @@ type OrganizerVerificationRequestModel {
   rejectionReason: String
   reviewedAt: DateTime
   reviewer: AdminUser
-  status: OrganizerStatus!
+  status: CapabilityStatus!
   updatedAt: DateTime!
   user: AdminUser!
 }
@@ -927,6 +1136,11 @@ type OtpRequestResult {
 
   """Seconds the client must wait before requesting another OTP."""
   resendAvailableInSeconds: Int!
+
+  """
+  True when this request granted a capability the account did not have yet.
+  """
+  roleAdded: Boolean
 }
 
 """Pagination metadata returned alongside list payloads."""
@@ -979,8 +1193,8 @@ type PaginatedOrganizerVerificationRequests {
   pageInfo: PageInfo!
 }
 
-type PaginatedVenueOwnerVerificationRequests {
-  items: [VenueOwnerVerificationRequestModel!]!
+type PaginatedVenueVerificationRequests {
+  items: [VenueVerificationRequestModel!]!
   pageInfo: PageInfo!
 }
 
@@ -1059,6 +1273,33 @@ type PopularSportItem {
   sport: String!
 }
 
+"""
+A presigned S3 upload. PUT the file to `uploadUrl`, then store `key` in the relevant mutation.
+"""
+type PresignedUpload {
+  """Content-Type header the client MUST send on the PUT."""
+  contentType: String!
+
+  """Seconds until uploadUrl expires — PUT promptly."""
+  expiresIn: Int!
+
+  """
+  The S3 object key. Persist THIS (not uploadUrl) in avatarUrl / imageUrls / documentUrls etc.
+  """
+  key: String!
+
+  """Advisory max file size in bytes for this category."""
+  maxBytes: Int!
+
+  """HTTP method to use against uploadUrl (always "PUT")."""
+  method: String!
+
+  """
+  Presigned URL to PUT the file to. Send the same Content-Type header used to request it.
+  """
+  uploadUrl: String!
+}
+
 type Query {
   """
   Full detail for a single booking — user, venue, court, payment and timeline.
@@ -1105,13 +1346,13 @@ type Query {
   """List platform users with pagination, search and filters."""
   adminListUsers(input: ListAdminUsersInput): PaginatedAdminUsers!
 
-  """List pending (un-accepted) venue-owner invitations."""
-  adminListVenueOwnerInvitations: [VenueOwnerInvitation!]!
+  """List pending (un-accepted) venue invitations."""
+  adminListVenueInvitations: [VenueInvitation!]!
 
   """
-  List venue-owner-verification submissions with optional status / search filters.
+  List venue-verification submissions with optional status / search filters.
   """
-  adminListVenueOwnerVerificationRequests(input: ListVenueOwnerVerificationRequestsInput): PaginatedVenueOwnerVerificationRequests!
+  adminListVenueVerificationRequests(input: ListVenueVerificationRequestsInput): PaginatedVenueVerificationRequests!
 
   """
   List venues with pagination, search, and city / sport / status / featured filters.
@@ -1156,16 +1397,44 @@ type Query {
   """Single venue with owner, courts, gallery and review trail."""
   adminVenueDetail(id: ID!): AdminVenue!
 
-  """
-  Single venue-owner-verification submission with submitted info + reviewer.
-  """
-  adminVenueOwnerVerificationRequest(id: ID!): VenueOwnerVerificationRequestModel!
+  """Single venue-verification submission with submitted info + reviewer."""
+  adminVenueVerificationRequest(id: ID!): VenueVerificationRequestModel!
 
   """Returns the currently authenticated user."""
   me: User!
 
+  """
+  Resolve a stored object key into a fresh presigned download URL (e.g. to refresh an expired one).
+  """
+  mediaUrl(key: String!): String
+
+  """A single venue the signed-in user is a member of."""
+  myVenue(venueId: ID!): VenueModel!
+
+  """
+  The signed-in user's venue seats, with effective permissions + listing status.
+  """
+  myVenueMemberships: [VenueMembershipModel!]!
+
+  """Venues the signed-in user operates (any membership)."""
+  myVenues: [VenueModel!]!
+
+  """Active sports in the platform catalogue, ordered for display."""
+  sports: [SportModel!]!
+
+  """A single booking by id."""
+  venueBooking(bookingId: ID!, venueId: ID!): BookingModel!
+
+  """Today's booking overview numbers for a venue."""
+  venueBookingSummary(venueId: ID!): VenueBookingSummary!
+
+  """
+  Bookings for a venue, filtered by scope (today/upcoming) or a specific date.
+  """
+  venueBookings(input: ListVenueBookingsInput!): [BookingModel!]!
+
   """Validate the token before showing the password-setup form."""
-  verifyVenueOwnerInvitation(token: String!): InvitationVerification!
+  verifyVenueInvitation(token: String!): InvitationVerification!
 }
 
 """Compact booking row for the dashboard recent-bookings table."""
@@ -1187,6 +1456,14 @@ type RecentPaymentItem {
   provider: String
   status: String!
   userFullName: String
+}
+
+input RecordBookingPaymentInput {
+  amountPaid: Float! = 0
+  bookingId: ID!
+  paymentMethod: PaymentProvider
+  paymentStatus: BookingPaymentStatus!
+  venueId: ID!
 }
 
 """
@@ -1217,17 +1494,19 @@ input RejectVenueInput {
   venueId: ID!
 }
 
-input RejectVenueOwnerVerificationInput {
+input RejectVenueVerificationInput {
   """User-visible explanation. Shown to the requester."""
   reason: String!
   requestId: ID!
 }
 
 input RequestOtpInput {
+  """Optional password to set on first sign-up (min 8)."""
+  password: String
   phoneNumber: String!
 }
 
-input ResendVenueOwnerInvitationInput {
+input ResendVenueInvitationInput {
   invitationId: ID!
 }
 
@@ -1236,8 +1515,20 @@ type RevenueTrendPoint {
   revenue: Float!
 }
 
-input RevokeVenueOwnerInvitationInput {
+input RevokeVenueInvitationInput {
   invitationId: ID!
+}
+
+input SetBookingStatusInput {
+  bookingId: ID!
+  note: String
+  status: BookingStatusAction!
+  venueId: ID!
+}
+
+input SetVenueServicesInput {
+  services: [VenueServiceInput!]!
+  venueId: ID!
 }
 
 """
@@ -1278,6 +1569,19 @@ enum SortOrder {
   DESC
 }
 
+"""A bookable sport from the platform catalogue."""
+type SportModel {
+  description: String
+  displayOrder: Int!
+
+  """Amenity presets to offer for this sport."""
+  features: [String!]!
+  iconUrl: String
+  id: ID!
+  name: String!
+  slug: String!
+}
+
 """
 Compact sport reference embedded in venue / booking / tournament payloads.
 """
@@ -1286,6 +1590,24 @@ type SportStub {
   id: ID!
   name: String!
   slug: String!
+}
+
+input SubmitVenueInput {
+  additionalServices: [AdditionalServiceInput!]! = []
+  address: String!
+  city: String
+  closeTime: String
+  contactEmail: String
+  contactPhone: String
+  coverImageUrl: String
+  description: String
+  imageUrls: [String!]! = []
+  latitude: Float!
+  longitude: Float!
+  name: String!
+  openTime: String
+  services: [VenueServiceInput!]!
+  verification: VenueVerificationInput
 }
 
 input SuspendTournamentInput {
@@ -1352,6 +1674,7 @@ input UpdatePlatformSettingsInput {
 }
 
 input UpdateProfileInput {
+  """S3 object key from createUploadUrl (category AVATAR)."""
   avatarUrl: String
   email: String
   fullName: String
@@ -1360,6 +1683,9 @@ input UpdateProfileInput {
 input UpdateSportInput {
   description: String
   displayOrder: Int
+
+  """Amenity presets for this sport."""
+  features: [String!]
   iconUrl: String
   id: ID!
   isActive: Boolean
@@ -1384,6 +1710,23 @@ input UpdateUserRoleInput {
   userId: ID!
 }
 
+input UpdateVenueProfileInput {
+  additionalServices: [AdditionalServiceInput!]
+  address: String
+  city: String
+  closeTime: String
+  contactEmail: String
+  contactPhone: String
+  coverImageUrl: String
+  description: String
+  imageUrls: [String!]
+  latitude: Float
+  longitude: Float
+  name: String
+  openTime: String
+  venueId: ID!
+}
+
 input UpdateVenueVerificationStatusInput {
   """Required when status is REJECTED."""
   reason: String
@@ -1391,19 +1734,40 @@ input UpdateVenueVerificationStatusInput {
   venueId: ID!
 }
 
+"""
+The kind of object being uploaded; fixes the S3 key prefix and accepted file types.
+"""
+enum UploadCategory {
+  AVATAR
+  COURT_IMAGE
+  ORGANIZER_DOCUMENT
+  SPORT_ICON
+  TOURNAMENT_COVER
+  TOURNAMENT_IMAGE
+  VENUE_COVER
+  VENUE_DOCUMENT
+  VENUE_IMAGE
+}
+
 type User {
   avatarUrl: String
+  capabilities: [UserCapabilityModel!]!
   createdAt: DateTime!
   email: String
   fullName: String
   id: ID!
   isActive: Boolean!
   lastLoginAt: DateTime
-  organizerStatus: OrganizerStatus!
+  organizerStatus: CapabilityStatus!
   phoneNumber: String!
   role: UserRole!
   updatedAt: DateTime!
-  venueOwnerStatus: VenueOwnerStatus!
+  venueStatus: CapabilityStatus!
+}
+
+type UserCapabilityModel {
+  status: CapabilityStatus!
+  type: CapabilityType!
 }
 
 """Base user role. USER for everyone, SUPER_ADMIN for platform admins."""
@@ -1412,8 +1776,28 @@ enum UserRole {
   USER
 }
 
-"""Admin-facing view of a pending / accepted venue-owner invitation."""
-type VenueOwnerInvitation {
+"""Top-of-screen overview numbers for a venue's bookings."""
+type VenueBookingSummary {
+  bookingsToday: Int!
+  pendingPayments: Int!
+  revenueToday: Float!
+}
+
+"""A bookable surface (court / ground / pitch) within a venue."""
+type VenueCourt {
+  description: String
+  features: [String!]!
+  id: ID!
+  imageUrls: [String!]!
+  isActive: Boolean!
+  name: String!
+  pricePerHour: Float!
+  slotMinutes: Int!
+  sport: SportStub!
+}
+
+"""Admin-facing view of a pending / accepted venue invitation."""
+type VenueInvitation {
   acceptedAt: DateTime
   createdAt: DateTime!
   createdUser: AdminUser
@@ -1427,17 +1811,76 @@ type VenueOwnerInvitation {
 }
 
 """
-Lifecycle of a user requesting venue-owner access. Approved venue owners can create venues.
+A user's role within a single venue (venue-scoped RBAC): OWNER, MANAGER, FRONT_DESK, STAFF, COACH.
 """
-enum VenueOwnerStatus {
-  APPROVED
-  NOT_REQUESTED
-  PENDING_VERIFICATION
-  REJECTED
-  SUSPENDED
+enum VenueMemberRole {
+  COACH
+  FRONT_DESK
+  MANAGER
+  OWNER
+  STAFF
 }
 
-type VenueOwnerVerificationRequestModel {
+type VenueMembershipModel {
+  permissions: [String!]!
+  role: VenueMemberRole!
+  status: MembershipStatus!
+  venueId: ID!
+  venueName: String!
+  verificationStatus: VenueVerificationStatus!
+}
+
+"""The signed-in venue member's view of one of their venues."""
+type VenueModel {
+  additionalServices: [AdditionalServiceModel!]!
+  address: String
+  amenities: [String!]!
+  city: String
+  closeTime: String!
+  contactEmail: String
+  contactPhone: String
+  country: String
+  courts: [VenueCourt!]!
+  coverImageUrl: String
+  createdAt: DateTime!
+  description: String
+  documentUrls: [String!]!
+  id: ID!
+  imageUrls: [String!]!
+  isFeatured: Boolean!
+  latitude: Float
+  longitude: Float
+  name: String!
+  openTime: String!
+  rejectionReason: String
+  sports: [SportStub!]!
+  updatedAt: DateTime!
+  verificationStatus: VenueVerificationStatus!
+}
+
+"""A sport the venue offers, with its courts, slot length and price."""
+input VenueServiceInput {
+  """Number of identical courts to create."""
+  courtCount: Int! = 1
+  features: [String!]! = []
+  pricePerHour: Float!
+  slotMinutes: Int! = 60
+
+  """Sport slug, e.g. "futsal" (matches Sport.slug)."""
+  sportSlug: String!
+}
+
+"""Venue KYC documents + business info submitted for verification."""
+input VenueVerificationInput {
+  businessName: String
+  businessType: String
+  documentUrls: [String!]! = []
+  panNumber: String
+  registrationNumber: String
+  vatNumber: String
+}
+
+type VenueVerificationRequestModel {
   address: String
   businessName: String
   businessType: String
@@ -1452,14 +1895,14 @@ type VenueOwnerVerificationRequestModel {
   rejectionReason: String
   reviewedAt: DateTime
   reviewer: AdminUser
-  status: VenueOwnerStatus!
+  status: CapabilityStatus!
   updatedAt: DateTime!
   user: AdminUser!
   vatNumber: String
 }
 
 """
-Admin-side moderation status of a Venue. PENDING until approved; SUSPENDED hides it from the marketplace.
+Admin-side moderation status of a single Venue listing. PENDING until approved; SUSPENDED hides it from the marketplace.
 """
 enum VenueVerificationStatus {
   APPROVED

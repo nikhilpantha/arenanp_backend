@@ -1,0 +1,126 @@
+// ─── Bookings ───────────────────────────────────────────────────────────────
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+/// Who holds a booking — a registered team, a walk-in individual, or a club.
+enum CustomerType {
+  TEAM
+  INDIVIDUAL
+  CLUB
+}
+
+/// How the booking was created.
+enum BookingSource {
+  WALK_IN
+  ONLINE
+  SUBSCRIPTION
+}
+
+/// Venue-side payment state for a booking (simple ledger; distinct from the
+/// gateway Payment workflow used for online transactions).
+enum BookingPaymentStatus {
+  PAID
+  PENDING
+  PARTIAL
+}
+
+/// A reservation of a Court for a given time window.
+///
+/// Money fields are stored at booking time so historical totals stay correct
+/// even if the court's `pricePerHour` changes later. The state machine flows
+/// PENDING_PAYMENT -> CONFIRMED -> COMPLETED (or NO_SHOW), with CANCELLED as
+/// a terminal sink. Every transition writes a row to `BookingStatusEvent` so
+/// admins can audit the timeline.
+model Booking {
+  id String @id @default(cuid())
+
+  /// The registered player who booked online. Null for venue-created bookings
+  /// (walk-ins / phone), which carry denormalised customer fields instead.
+  userId  String?
+  user    User?   @relation("UserBookings", fields: [userId], references: [id], onDelete: SetNull)
+  venueId String
+  venue   Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  courtId String
+  court   Court   @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  /// Venue-created bookings store the customer inline (loyalty is keyed by phone).
+  customerName  String?
+  customerPhone String?
+  customerType  CustomerType  @default(INDIVIDUAL)
+  source        BookingSource @default(WALK_IN)
+
+  /// Staff member who created the booking (venue panel). Null for online bookings.
+  createdById String?
+  createdBy   User?   @relation("UserBookingsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  startAt         DateTime
+  endAt           DateTime
+  durationMinutes Int
+
+  /// Snapshot of pricing at booking time — never recomputed.
+  pricePerHour   Decimal              @db.Decimal(10, 2)
+  subtotal       Decimal              @db.Decimal(10, 2)
+  serviceFee     Decimal              @default(0) @db.Decimal(10, 2)
+  discountAmount Decimal              @default(0) @db.Decimal(10, 2)
+  total          Decimal              @db.Decimal(10, 2)
+  /// True when redeemed as a free loyalty game (total = 0).
+  freeGame       Boolean              @default(false)
+  paymentStatus  BookingPaymentStatus @default(PENDING)
+  amountPaid     Decimal              @default(0) @db.Decimal(10, 2)
+  paymentMethod  PaymentProvider?
+
+  status             BookingStatus @default(PENDING_PAYMENT)
+  cancellationReason String?
+  cancelledById      String?
+  cancelledBy        User?         @relation("UserCancelledBookings", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelledAt        DateTime?
+  completedAt        DateTime?
+
+  /// Free-text admin note. Surfaced in the admin detail drawer only.
+  adminNotes String?
+
+  payment        Payment?
+  statusEvents   BookingStatusEvent[]
+  refundRequests RefundRequest[]
+  disputes       Dispute[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([venueId])
+  @@index([courtId])
+  @@index([status])
+  @@index([startAt])
+  @@index([venueId, startAt])
+  @@index([customerPhone])
+  @@map("bookings")
+}
+
+/// Append-only timeline entry for a Booking. Created by the service layer on
+/// every state transition so the admin can replay the booking's lifecycle.
+model BookingStatusEvent {
+  id        String  @id @default(cuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+
+  actorId String?
+  actor   User?   @relation("UserBookingStatusEvents", fields: [actorId], references: [id], onDelete: SetNull)
+  note    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
+  @@index([createdAt])
+  @@map("booking_status_events")
+}

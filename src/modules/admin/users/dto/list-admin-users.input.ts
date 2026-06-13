@@ -1,5 +1,5 @@
 import { Field, InputType } from '@nestjs/graphql';
-import { OrganizerStatus, UserRole, VenueOwnerStatus } from '@prisma/client';
+import { CapabilityStatus, UserRole } from '@prisma/client';
 import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { PaginationInput } from '../../../../common/dto/pagination.input';
@@ -25,15 +25,21 @@ export class ListAdminUsersInput {
   @IsEnum(UserRole)
   role?: UserRole;
 
-  @Field(() => OrganizerStatus, { nullable: true })
+  @Field(() => CapabilityStatus, {
+    nullable: true,
+    description: 'Filter by ORGANIZER capability status.',
+  })
   @IsOptional()
-  @IsEnum(OrganizerStatus)
-  organizerStatus?: OrganizerStatus;
+  @IsEnum(CapabilityStatus)
+  organizerStatus?: CapabilityStatus;
 
-  @Field(() => VenueOwnerStatus, { nullable: true })
+  @Field(() => CapabilityStatus, {
+    nullable: true,
+    description: 'Filter by VENUE capability status.',
+  })
   @IsOptional()
-  @IsEnum(VenueOwnerStatus)
-  venueOwnerStatus?: VenueOwnerStatus;
+  @IsEnum(CapabilityStatus)
+  venueStatus?: CapabilityStatus;
 
   @Field({ nullable: true, description: 'true = only active users, false = only suspended.' })
   @IsOptional()

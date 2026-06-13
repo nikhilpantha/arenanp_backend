@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrganizerStatus, Prisma } from '@prisma/client';
+import { CapabilityStatus, CapabilityType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { SortOrder } from '../users/dto/admin-user.model';
 import { ListOrganizerVerificationRequestsInput } from './dto/list-organizer-verification-requests.input';
@@ -63,8 +63,8 @@ export class OrganizerVerificationRepository {
    */
   async transitionRequestAndUser(args: {
     requestId: string;
-    nextRequestStatus: OrganizerStatus;
-    nextUserStatus: OrganizerStatus;
+    nextRequestStatus: CapabilityStatus;
+    nextUserStatus: CapabilityStatus;
     reviewedById: string;
     rejectionReason?: string | null;
   }): Promise<RequestWithRelations> {
@@ -73,21 +73,38 @@ export class OrganizerVerificationRepository {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.organizerVerificationRequest.findUnique({
         where: { id: requestId },
-        select: { userId: true },
+        select: {
+          userId: true,
+          businessName: true,
+          contactEmail: true,
+          contactPhone: true,
+          city: true,
+          bio: true,
+          experience: true,
+        },
       });
       if (!existing) {
         throw new Error('Request not found');
       }
 
-      // Bump tokenVersion when the user is being suspended so any existing
-      // session is immediately invalidated.
-      await tx.user.update({
-        where: { id: existing.userId },
-        data:
-          nextUserStatus === OrganizerStatus.SUSPENDED
-            ? { organizerStatus: nextUserStatus, tokenVersion: { increment: 1 } }
-            : { organizerStatus: nextUserStatus },
-      });
+      await this.applyCapability(tx, existing.userId, nextUserStatus);
+
+      // On approval, materialise the living organizer profile from the application.
+      if (nextUserStatus === CapabilityStatus.APPROVED) {
+        const profile = {
+          businessName: existing.businessName,
+          contactEmail: existing.contactEmail,
+          contactPhone: existing.contactPhone,
+          city: existing.city,
+          bio: existing.bio,
+          experience: existing.experience,
+        };
+        await tx.organizerProfile.upsert({
+          where: { userId: existing.userId },
+          update: profile,
+          create: { userId: existing.userId, ...profile },
+        });
+      }
 
       return tx.organizerVerificationRequest.update({
         where: { id: requestId },
@@ -103,13 +120,32 @@ export class OrganizerVerificationRepository {
   }
 
   /** Suspend / reinstate an organizer at the user level. No request row touched. */
-  setUserOrganizerStatus(userId: string, status: OrganizerStatus) {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data:
-        status === OrganizerStatus.SUSPENDED
-          ? { organizerStatus: status, tokenVersion: { increment: 1 } }
-          : { organizerStatus: status },
+  setUserCapabilityStatus(userId: string, status: CapabilityStatus) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.applyCapability(tx, userId, status);
+      return tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        include: { capabilities: true },
+      });
     });
+  }
+
+  /** Upsert the user's ORGANIZER capability; bump tokenVersion when suspending. */
+  private async applyCapability(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    status: CapabilityStatus,
+  ): Promise<void> {
+    await tx.userCapability.upsert({
+      where: { userId_type: { userId, type: CapabilityType.ORGANIZER } },
+      update: { status },
+      create: { userId, type: CapabilityType.ORGANIZER, status },
+    });
+    if (status === CapabilityStatus.SUSPENDED) {
+      await tx.user.update({
+        where: { id: userId },
+        data: { tokenVersion: { increment: 1 } },
+      });
+    }
   }
 }

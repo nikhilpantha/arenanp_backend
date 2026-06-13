@@ -11,8 +11,11 @@ export class AdminSport {
   @Field(() => ID) id!: string;
   @Field() slug!: string;
   @Field() name!: string;
-  @Field({ nullable: true }) iconUrl?: string;
+  /** Stored S3 object key; presigned to a download URL by AdminSportsResolver. */
+  iconUrl?: string;
   @Field({ nullable: true }) description?: string;
+  @Field(() => [String], { description: 'Amenity presets offered for this sport.' })
+  features!: string[];
   @Field(() => Int) displayOrder!: number;
   @Field() isActive!: boolean;
 
@@ -33,6 +36,7 @@ export function mapSportToAdmin(row: SportWithCreator): AdminSport {
     name: row.name,
     iconUrl: row.iconUrl ?? undefined,
     description: row.description ?? undefined,
+    features: row.features,
     displayOrder: row.displayOrder,
     isActive: row.isActive,
     createdBy: row.createdBy ? mapPrismaUserToAdmin(row.createdBy) : undefined,

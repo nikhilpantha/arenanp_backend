@@ -1,8 +1,10 @@
 import { Field, Float, ID, Int, ObjectType } from '@nestjs/graphql';
 import {
   Booking as PrismaBooking,
+  BookingSource,
   BookingStatus,
   BookingStatusEvent as PrismaBookingStatusEvent,
+  CustomerType,
   PaymentProvider,
   PaymentStatus,
   Payment as PrismaPayment,
@@ -59,7 +61,12 @@ export class AdminBookingStatusEvent {
 export class AdminBooking {
   @Field(() => ID) id!: string;
 
-  @Field(() => AdminUser) user!: AdminUser;
+  /** The registered player who booked online; null for venue walk-in bookings. */
+  @Field(() => AdminUser, { nullable: true }) user?: AdminUser;
+  @Field({ nullable: true }) customerName?: string;
+  @Field({ nullable: true }) customerPhone?: string;
+  @Field(() => CustomerType) customerType!: CustomerType;
+  @Field(() => BookingSource) source!: BookingSource;
   @Field(() => AdminBookingVenueStub) venue!: AdminBookingVenueStub;
   @Field(() => AdminBookingCourtStub) court!: AdminBookingCourtStub;
 
@@ -98,7 +105,7 @@ type EventWithActor = PrismaBookingStatusEvent & {
 type PaymentLite = PrismaPayment | null;
 
 type BookingWithRelations = PrismaBooking & {
-  user: Parameters<typeof mapPrismaUserToAdmin>[0];
+  user: Parameters<typeof mapPrismaUserToAdmin>[0] | null;
   cancelledBy?: Parameters<typeof mapPrismaUserToAdmin>[0] | null;
   venue: { id: string; name: string; city: string | null };
   court: {
@@ -140,7 +147,11 @@ export function mapStatusEventToAdmin(e: EventWithActor): AdminBookingStatusEven
 export function mapBookingToAdmin(b: BookingWithRelations): AdminBooking {
   return {
     id: b.id,
-    user: mapPrismaUserToAdmin(b.user),
+    user: b.user ? mapPrismaUserToAdmin(b.user) : undefined,
+    customerName: b.customerName ?? undefined,
+    customerPhone: b.customerPhone ?? undefined,
+    customerType: b.customerType,
+    source: b.source,
     venue: { id: b.venue.id, name: b.venue.name, city: b.venue.city ?? undefined },
     court: {
       id: b.court.id,

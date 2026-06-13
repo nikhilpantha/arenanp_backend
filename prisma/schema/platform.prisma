@@ -1,0 +1,35 @@
+// ─── Platform settings ──────────────────────────────────────────────────────
+
+/// Singleton row of platform-wide settings. Always exactly one row with
+/// id = "default"; the service upserts on first read so the table is never
+/// empty. Decimal / boolean / string types are intentional — a key-value
+/// store would lose the schema we want admins to edit through.
+///
+/// `platformCommissionPercentage` here overrides the env var consulted by
+/// the payments module (Feature 7). When this row exists the env var is
+/// only a hard-coded fallback for the very first boot.
+model PlatformSetting {
+  id String @id @default("default")
+
+  platformCommissionPercentage Decimal @default(10) @db.Decimal(5, 2)
+  slotLockDurationMinutes      Int     @default(10)
+  cancellationWindowHours      Int     @default(24)
+  refundPolicyText             String?
+  bookingServiceFee            Decimal @default(0) @db.Decimal(10, 2)
+
+  paymentProvidersEnabled PaymentProvider[] @default([])
+
+  supportContactNumber String?
+  supportEmail         String?
+  defaultCity          String?
+
+  maintenanceMode Boolean @default(false)
+
+  updatedById String?
+  updatedBy   User?   @relation("UserPlatformSettingsUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}

@@ -1,5 +1,5 @@
 import { Field, InputType } from '@nestjs/graphql';
-import { OrganizerStatus } from '@prisma/client';
+import { CapabilityStatus } from '@prisma/client';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { PaginationInput } from '../../../../common/dto/pagination.input';
@@ -11,13 +11,13 @@ export class ListOrganizerVerificationRequestsInput {
   @IsOptional()
   pagination?: PaginationInput;
 
-  @Field(() => OrganizerStatus, {
+  @Field(() => CapabilityStatus, {
     nullable: true,
     description: 'Filter by request status. Defaults to all when omitted.',
   })
   @IsOptional()
-  @IsEnum(OrganizerStatus)
-  status?: OrganizerStatus;
+  @IsEnum(CapabilityStatus)
+  status?: CapabilityStatus;
 
   @Field({
     nullable: true,

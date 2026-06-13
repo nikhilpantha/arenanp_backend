@@ -1,16 +1,18 @@
 import { SetMetadata } from '@nestjs/common';
+import { CapabilityType } from '@prisma/client';
 
-export const REQUIRE_ORGANIZER_APPROVED_KEY = 'requireOrganizerApproved';
-export const REQUIRE_VENUE_OWNER_APPROVED_KEY = 'requireVenueOwnerApproved';
-
-/**
- * Require the current user to have `organizerStatus = APPROVED`.
- * Used by `CapabilityGuard` on tournament-creation mutations etc.
- */
-export const RequireOrganizerApproved = () => SetMetadata(REQUIRE_ORGANIZER_APPROVED_KEY, true);
+export const REQUIRE_CAPABILITY_KEY = 'requireCapability';
 
 /**
- * Require the current user to have `venueOwnerStatus = APPROVED`.
- * Used by `CapabilityGuard` on venue / court / venue-booking mutations.
+ * Require the current user to hold `type` with APPROVED status (enforced by
+ * `CapabilityGuard`; SUPER_ADMIN bypasses). Generic over CapabilityType so a
+ * new capability (e.g. COACH) needs no new decorator.
  */
-export const RequireVenueOwnerApproved = () => SetMetadata(REQUIRE_VENUE_OWNER_APPROVED_KEY, true);
+export const RequireCapability = (type: CapabilityType) =>
+  SetMetadata(REQUIRE_CAPABILITY_KEY, type);
+
+/** Convenience: require an approved VENUE capability (venue/court/booking mutations). */
+export const RequireVenueApproved = () => RequireCapability(CapabilityType.VENUE);
+
+/** Convenience: require an approved ORGANIZER capability (tournament creation etc). */
+export const RequireOrganizerApproved = () => RequireCapability(CapabilityType.ORGANIZER);
