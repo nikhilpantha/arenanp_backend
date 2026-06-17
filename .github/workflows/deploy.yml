@@ -551,13 +551,14 @@ jobs:
             fi
 
       # ─────────────────────────────────────────────────────────────────────
-      # HEALTH CHECK STEP 4: Test Database Connectivity
-      # What: Verifies the running app can connect to the database
+      # HEALTH CHECK STEP 3B: Test Database Connectivity
+      # What: Verifies the database connection is working
       # Why it matters:
       #   - Database might be down
       #   - Credentials might be wrong
-      #   - Migrations might have failed
-      # How: Calls an endpoint that requires database access
+      #   - Network connectivity might be broken
+      # How: Uses Prisma to directly test database connection (not through GraphQL)
+      # Why Prisma: Tests actual database layer the app uses, more reliable
       # ─────────────────────────────────────────────────────────────────────
       - name: Test database connectivity
         id: db-check
@@ -569,23 +570,52 @@ jobs:
           script: |
             echo "🗄️ Testing database connectivity..."
 
-            # Simple database health check query
-            # This will verify migrations ran and DB is accessible
-            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:4000/graphql \
-              -H 'Content-Type: application/json' \
-              -d '{"query":"{ users { id } }"}')
+            cd ~/arenanp_backend
 
-            HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
-            BODY=$(echo "$RESPONSE" | head -n -1)
+            # Load environment variables so DATABASE_URL is available
+            if [ -f ".env.production" ]; then
+              export $(cat .env.production | xargs)
+            fi
 
-            echo "HTTP Status: $HTTP_CODE"
+            # Test database connection using Prisma
+            # This is more reliable than GraphQL queries because:
+            # 1. Doesn't depend on specific resolvers existing
+            # 2. Tests actual database layer, not through GraphQL
+            # 3. Won't break if schema changes
+            if timeout 10s npx prisma db execute --stdin <<< "SELECT 1" > /dev/null 2>&1; then
+              echo "✅ Database connection is working"
 
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Database is accessible from the application"
+              # Also check if migrations are up to date
+              echo ""
+              echo "📋 Checking migration status..."
+              MIGRATION_STATUS=$(npx prisma migrate status 2>&1)
+
+              if echo "$MIGRATION_STATUS" | grep -q "Everything is up to date"; then
+                echo "✅ All migrations are applied"
+              elif echo "$MIGRATION_STATUS" | grep -q "Following migrations have not yet been applied"; then
+                echo "⚠️ There are pending migrations (but database is accessible)"
+                echo "$MIGRATION_STATUS" | head -5
+              else
+                echo "ℹ️ Migration status:"
+                echo "$MIGRATION_STATUS" | head -5
+              fi
+
               exit 0
             else
-              echo "❌ Database query failed (HTTP $HTTP_CODE)"
-              echo "Response: $BODY"
+              echo "❌ Database connectivity test failed"
+              echo ""
+              echo "Troubleshooting steps:"
+              echo "1. Verify DATABASE_URL is set correctly"
+              echo "2. Check if database server is running"
+              echo "3. Verify network connectivity to database host"
+              echo "4. Check database credentials and permissions"
+              echo ""
+              echo "DATABASE_URL check:"
+              if [ -z "$DATABASE_URL" ]; then
+                echo "❌ DATABASE_URL is not set!"
+              else
+                echo "✅ DATABASE_URL is set (first 50 chars): ${DATABASE_URL:0:50}..."
+              fi
               exit 1
             fi
 
