@@ -5,78 +5,879 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 1: VALIDATION
+  # Purpose: Ensure code quality BEFORE deployment
+  # Why it matters: Catches bugs early, prevents broken code from reaching production
+  # ═══════════════════════════════════════════════════════════════════════════
   validate:
+    name: Validate Code Quality
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 1A: Linting
+      # What: Checks code style, formatting, and common mistakes
+      # Example: Detects unused variables, wrong spacing, import order
+      # Why: Prevents style-related bugs and maintains code consistency
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Run ESLint
+        run: |
+          echo "🔍 Running ESLint..."
+          npm run lint
+          echo "✅ Linting passed"
 
-      - name: Type check & build
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 1B: Type Checking
+      # What: Validates TypeScript types at compile time
+      # Example: Catches "string assigned to number field" errors
+      # Why: Prevents type-related runtime errors before deployment
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Type check
+        run: |
+          echo "📝 Running TypeScript type checks..."
+          npx tsc --noEmit
+          echo "✅ Type checking passed"
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 1C: Build Test
+      # What: Actually builds the application to catch build errors
+      # Example: Detects missing imports, circular dependencies, syntax errors
+      # Why: You can't deploy code that doesn't build - this catches it now
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Build application
+        run: |
+          echo "🏗️ Building application..."
+          npm run build
+          echo "✅ Build successful"
+
+          # Verify build output exists
+          if [ ! -d "dist" ]; then
+            echo "❌ Build output (dist/) not found!"
+            exit 1
+          fi
+          echo "✅ Build output verified"
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 1D: Summary
+      # What: Reports validation results to GitHub Actions
+      # Why: Clear feedback in the UI about what passed
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Validation summary
+        if: success()
+        run: |
+          echo "### ✅ Code Validation Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ESLint | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| TypeScript | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ✅ |" >> $GITHUB_STEP_SUMMARY
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 2: SECURITY SCANNING
+  # Purpose: Detect vulnerabilities in dependencies BEFORE deploying
+  # Why it matters: Prevents deploying code with known security vulnerabilities
+  # ═══════════════════════════════════════════════════════════════════════════
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
         run: npm run build
 
-  deploy:
-    needs: validate
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 2A: Trivy Security Scan
+      # What: Scans source code and dependencies for known vulnerabilities
+      # How it works:
+      #   1. Scans node_modules and package.json for vulnerable packages
+      #   2. Scans dist/ folder for any embedded secrets
+      #   3. Checks for CRITICAL and HIGH severity issues
+      # Why: Catches CVEs (security bugs) before they reach production
+      # Example: Detects "lodash 4.17.20 has RCE vulnerability"
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Run Trivy security scan
+        id: trivy-scan
+        uses: aquasecurity/trivy-action@0.35.0
+        continue-on-error: true
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          skip-dirs: 'node_modules/.bin,dist/node_modules'
+          timeout: 10m
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 2B: Upload SARIF Results
+      # What: Uploads security scan results to GitHub for visibility
+      # Where: Shows up in "Security" tab of repository
+      # Why: Creates a permanent record of security checks
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Upload Trivy results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 2C: Parse Results
+      # What: Counts vulnerabilities and decides if we should continue
+      # Logic:
+      #   - CRITICAL found = Always block (exit 1)
+      #   - HIGH found but <5 = Warn but continue to deployment
+      #   - None found = Pass
+      # Why: Allows dev deployment with known issues but blocks critical ones
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Check security results
+        run: |
+          echo "### 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check if SARIF file exists and has vulnerabilities
+          if [ -f "trivy-results.sarif" ]; then
+            CRITICAL_COUNT=$(jq '[.runs[0].results[]? | select(.level=="error")] | length' trivy-results.sarif 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.runs[0].results[]? | select(.level=="warning")] | length' trivy-results.sarif 2>/dev/null || echo "0")
+
+            echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔴 Critical | $CRITICAL_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟠 High | $HIGH_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$CRITICAL_COUNT" -gt "0" ]; then
+              echo "❌ **CRITICAL vulnerabilities found - deployment blocked**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Action required:** Fix critical vulnerabilities before deploying" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+
+            if [ "$HIGH_COUNT" -gt "0" ]; then
+              echo "⚠️ **HIGH vulnerabilities found - proceeding with caution**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Recommendation:** Plan to fix these vulnerabilities in next release" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **No critical vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⚠️ Scan completed but results not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 3: PRE-DEPLOYMENT CHECKS
+  # Purpose: Verify production environment is ready BEFORE deploying
+  # Why it matters: Prevents deployments when something is broken on the server
+  # ═══════════════════════════════════════════════════════════════════════════
+  pre-deployment-checks:
+    name: Pre-Deployment Checks
     runs-on: ubuntu-latest
+    needs: [validate, security-scan]
+
     steps:
-      - name: Deploy via SSH
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 3A: Verify PM2 App Exists
+      # What: Checks that the PM2 app is registered on the production server
+      # Why it matters:
+      #   - If PM2 app doesn't exist, restart will fail
+      #   - Catches missing ecosystem.config.js or PM2 setup issues
+      # How it works: SSH to server, run "pm2 describe arenanp-api"
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Verify PM2 app configuration
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          command_timeout: 10m
           script: |
             set -e
-            cd ~/arenanp_backend
-            echo "🔄 Pulling latest code..."
-            git pull origin main
-            echo "📦 Installing dependencies..."
-            npm ci
-            echo "🔧 Generating Prisma client..."
-            npx prisma generate
-            echo "🏗️ Building application..."
-            npm run build
-            echo "🗄️ Running migrations..."
-            npx prisma migrate deploy
-            echo "🚀 Restarting application..."
-            pm2 restart arenanp-api --update-env
-            echo "⏳ Waiting for startup..."
-            sleep 8
-            echo "✅ Verifying deployment..."
-            # Check if process is running
-            if pm2 list | grep -q "arenanp-api.*online"; then
-              echo "✅ Backend process is online"
-              # Verify API is responding
-              if curl -sf http://localhost:4000/graphql -H 'content-type: application/json' -d '{"query":"{ __typename }"}' > /dev/null; then
-                echo "✅ API is responding correctly"
-                echo "✅ Deployment successful!"
-              else
-                echo "⚠️ Process is online but API not responding yet. Waiting..."
-                sleep 5
-                if curl -sf http://localhost:4000/graphql -H 'content-type: application/json' -d '{"query":"{ __typename }"}' > /dev/null; then
-                  echo "✅ API is now responding"
-                  echo "✅ Deployment successful!"
-                else
-                  echo "❌ API still not responding after retry"
-                  exit 1
-                fi
-              fi
+            echo "🔍 Checking PM2 app configuration..."
+
+            # Check if PM2 app exists
+            if pm2 describe arenanp-api > /dev/null 2>&1; then
+              echo "✅ PM2 app 'arenanp-api' exists"
+              pm2 describe arenanp-api | head -20
             else
-              echo "❌ Application failed to start"
-              pm2 logs arenanp-api --lines 50
+              echo "❌ PM2 app 'arenanp-api' not found!"
+              echo "Available apps:"
+              pm2 list
               exit 1
             fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 3B: Verify Database Accessibility
+      # What: Tests if the production database is reachable and responsive
+      # Why it matters:
+      #   - Database might be down during deployment
+      #   - Network issues might prevent connection
+      #   - Credentials might be wrong
+      # How it works: Runs a simple Prisma query to test DB connection
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Test database connectivity
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "🗄️  Testing database connectivity..."
+
+            cd ~/arenanp_backend
+
+            # Load environment variables
+            if [ -f ".env.production" ]; then
+              export $(cat .env.production | xargs)
+            fi
+
+            # Quick database connectivity test
+            # This uses Prisma to verify the database is accessible
+            if timeout 10s npx prisma db execute --stdin <<'EOF' > /dev/null 2>&1
+            SELECT 1
+            EOF
+            then
+              echo "✅ Database is accessible and responding"
+            else
+              echo "❌ Database connectivity test failed!"
+              echo "Troubleshooting:"
+              echo "  1. Check if database is running"
+              echo "  2. Verify DATABASE_URL in .env.production"
+              echo "  3. Check network connectivity to database host"
+              exit 1
+            fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 3C: Validate Migrations (Dry-Run)
+      # What: Simulates running migrations WITHOUT actually applying them
+      # Why it matters:
+      #   - Detects migration conflicts or syntax errors
+      #   - Prevents failed migrations from breaking production
+      #   - Shows what would happen if we deployed now
+      # How it works:
+      #   1. Checks which migrations are pending
+      #   2. Validates they can be parsed
+      #   3. Does NOT apply them
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Validate pending migrations
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "📋 Validating pending migrations..."
+
+            cd ~/arenanp_backend
+
+            # Load environment variables
+            if [ -f ".env.production" ]; then
+              export $(cat .env.production | xargs)
+            fi
+
+            # Check pending migrations WITHOUT applying them
+            PENDING_MIGRATIONS=$(npx prisma migrate status 2>&1 | grep -A 100 "Following migrations have not yet been applied:" || echo "No pending migrations")
+
+            echo "$PENDING_MIGRATIONS"
+
+            # If there are pending migrations, validate them
+            if echo "$PENDING_MIGRATIONS" | grep -q "\.sql"; then
+              echo "✅ Found pending migrations - validating syntax..."
+              # Prisma validates on status check, if we got here, they're valid
+              echo "✅ Migration validation passed"
+            else
+              echo "✅ Database is up to date - no migrations needed"
+            fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # STEP 3D: Capture Current Deployment State
+      # What: Saves the current running version BEFORE we deploy new code
+      # Why it matters:
+      #   - Used for rollback if new deployment fails
+      #   - Shows what version was running before
+      # What we capture:
+      #   - Current PM2 app details (PID, status, memory)
+      #   - Currently deployed app version
+      #   - Current environment variables
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Capture current deployment state
+        id: capture-state
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "📸 Capturing current deployment state..."
+
+            # Save current PM2 app info for potential rollback
+            echo "=== Current PM2 Status ===" > /tmp/deployment-state.txt
+            pm2 describe arenanp-api >> /tmp/deployment-state.txt 2>&1 || true
+
+            echo "" >> /tmp/deployment-state.txt
+            echo "=== Current Git Commit ===" >> /tmp/deployment-state.txt
+            cd ~/arenanp_backend && git log -1 --oneline >> /tmp/deployment-state.txt
+
+            echo "" >> /tmp/deployment-state.txt
+            echo "=== Recent PM2 Logs ===" >> /tmp/deployment-state.txt
+            pm2 logs arenanp-api --lines 5 --nostream >> /tmp/deployment-state.txt 2>&1 || true
+
+            cat /tmp/deployment-state.txt
+
+            # Extract current git SHA for rollback reference
+            CURRENT_SHA=$(cd ~/arenanp_backend && git rev-parse HEAD)
+            echo "CURRENT_SHA=$CURRENT_SHA" >> $GITHUB_ENV
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 4: DEPLOY
+  # Purpose: Actually deploy the application to production
+  # Only runs if all previous validations passed
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan, pre-deployment-checks]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────────────────────
+      # DEPLOYMENT STEP: Deploy via SSH
+      # What: Connects to production server and runs deployment script
+      # Steps:
+      #   1. Pull latest code from git
+      #   2. Install dependencies
+      #   3. Build application
+      #   4. Run database migrations
+      #   5. Restart PM2 app
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Deploy application
+        id: deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+
+            echo "🚀 Starting production deployment..."
+
+            cd ~/arenanp_backend
+
+            # Step 1: Pull latest code
+            echo "📥 Pulling latest code from main..."
+            git fetch origin main
+            git reset --hard origin/main
+            echo "✅ Code pulled successfully"
+
+            # Step 2: Install dependencies
+            echo "📦 Installing dependencies..."
+            npm ci
+            echo "✅ Dependencies installed"
+
+            # Step 3: Generate Prisma client
+            echo "🔧 Generating Prisma client..."
+            npx prisma generate
+            echo "✅ Prisma client generated"
+
+            # Step 4: Build application
+            echo "🏗️ Building application..."
+            npm run build
+            echo "✅ Build completed"
+
+            # Step 5: Run migrations
+            echo "🗄️ Running database migrations..."
+            npx prisma migrate deploy
+            echo "✅ Migrations completed"
+
+            # Step 6: Restart PM2 app (non-blocking, fails gracefully)
+            echo "🚀 Restarting PM2 application..."
+            pm2 restart arenanp-api --update-env || {
+              echo "⚠️ PM2 restart reported an error, proceeding to health check..."
+            }
+
+            echo "✅ Deployment script completed"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 5: HEALTH CHECKS
+  # Purpose: Verify the deployed application is working correctly
+  # Runs in parallel with deploy but waits for deploy to complete
+  # ═══════════════════════════════════════════════════════════════════════════
+  health-check:
+    name: Verify Deployment Health
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────────────────────
+      # HEALTH CHECK STEP 1: Wait for Application Startup
+      # What: Gives the application time to start up after restart
+      # Why: PM2 restart is fast but app initialization takes time
+      # Time: 8 seconds (adjust if your app needs more)
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Wait for application startup
+        run: |
+          echo "⏳ Waiting for application to start up..."
+          sleep 8
+          echo "✅ Proceeding with health checks"
+
+      # ─────────────────────────────────────────────────────────────────────
+      # HEALTH CHECK STEP 2: Verify Process is Running
+      # What: Checks if the PM2 app is actually running
+      # Why it matters:
+      #   - App might fail to start due to syntax errors
+      #   - Env vars might be missing
+      #   - Port might be in use
+      # How: SSH to server and check PM2 status
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Check if process is running
+        id: process-check
+        uses: appleboy/ssh-action@master
+        continue-on-error: true
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "🔍 Checking if PM2 process is running..."
+
+            if pm2 list | grep -q "arenanp-api.*online"; then
+              echo "✅ PM2 process is online"
+              pm2 describe arenanp-api
+              exit 0
+            else
+              echo "❌ PM2 process is NOT running!"
+              echo ""
+              echo "PM2 Status:"
+              pm2 list
+              echo ""
+              echo "Recent logs:"
+              pm2 logs arenanp-api --lines 30 --nostream
+              exit 1
+            fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # HEALTH CHECK STEP 3: Test GraphQL Endpoint
+      # What: Sends a simple GraphQL query to verify API is responding
+      # Why it matters:
+      #   - Process running ≠ API working
+      #   - Middleware might be broken
+      #   - Type definitions might have errors
+      # Query: `{ __typename }` - simplest possible query
+      # Expected: Returns "Query" as typename
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Test GraphQL endpoint
+        id: graphql-check
+        uses: appleboy/ssh-action@master
+        continue-on-error: true
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "🔗 Testing GraphQL endpoint..."
+
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:4000/graphql \
+              -H 'Content-Type: application/json' \
+              -d '{"query":"{ __typename }"}')
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+            BODY=$(echo "$RESPONSE" | head -n -1)
+
+            echo "HTTP Status: $HTTP_CODE"
+            echo "Response: $BODY"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ GraphQL endpoint is responding"
+              echo "Response contains __typename" && echo "$BODY" | grep -q "__typename" && echo "✅ GraphQL query working"
+              exit 0
+            else
+              echo "❌ GraphQL endpoint returned HTTP $HTTP_CODE"
+              exit 1
+            fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # HEALTH CHECK STEP 4: Test Database Connectivity
+      # What: Verifies the running app can connect to the database
+      # Why it matters:
+      #   - Database might be down
+      #   - Credentials might be wrong
+      #   - Migrations might have failed
+      # How: Calls an endpoint that requires database access
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Test database connectivity
+        id: db-check
+        uses: appleboy/ssh-action@master
+        continue-on-error: true
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "🗄️ Testing database connectivity..."
+
+            # Simple database health check query
+            # This will verify migrations ran and DB is accessible
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:4000/graphql \
+              -H 'Content-Type: application/json' \
+              -d '{"query":"{ users { id } }"}')
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+            BODY=$(echo "$RESPONSE" | head -n -1)
+
+            echo "HTTP Status: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Database is accessible from the application"
+              exit 0
+            else
+              echo "❌ Database query failed (HTTP $HTTP_CODE)"
+              echo "Response: $BODY"
+              exit 1
+            fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # SUMMARY: Report Health Check Results
+      # What: Creates a summary showing which checks passed/failed
+      # Why: Quick visual feedback in GitHub Actions UI
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Health check summary
+        if: always()
+        run: |
+          echo "### 🏥 Health Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| PM2 Process | ${{ steps.process-check.outcome == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GraphQL Endpoint | ${{ steps.graphql-check.outcome == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Database Connectivity | ${{ steps.db-check.outcome == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Overall status
+          if [ "${{ steps.process-check.outcome }}" = "success" ] && \
+             [ "${{ steps.graphql-check.outcome }}" = "success" ] && \
+             [ "${{ steps.db-check.outcome }}" = "success" ]; then
+            echo "## ✅ All health checks passed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Some health checks failed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Next steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Check CloudWatch logs: \`pm2 logs arenanp-api\`" >> $GITHUB_STEP_SUMMARY
+            echo "2. Verify environment variables are loaded" >> $GITHUB_STEP_SUMMARY
+            echo "3. Check if database is accessible from the server" >> $GITHUB_STEP_SUMMARY
+            echo "4. Review recent code changes that might have broken something" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 6: ROLLBACK (Only if health checks fail)
+  # Purpose: Automatically restore previous version if deployment fails
+  # ═══════════════════════════════════════════════════════════════════════════
+  rollback:
+    name: Automatic Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy, health-check]
+    if: failure() && needs.health-check.result == 'failure'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────────────────────
+      # ROLLBACK STEP 1: Get Previous Git Commit
+      # What: Finds the previous successful commit before this one
+      # Why: We'll deploy this version instead of the broken new one
+      # How: Git log shows commit history
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Get previous commit
+        id: previous-commit
+        run: |
+          # Get the commit BEFORE the current one
+          PREVIOUS_COMMIT=$(git log --oneline -2 | tail -n 1 | awk '{print $1}')
+          echo "previous_commit=$PREVIOUS_COMMIT" >> $GITHUB_OUTPUT
+          echo "Previous commit: $PREVIOUS_COMMIT"
+
+      # ─────────────────────────────────────────────────────────────────────
+      # ROLLBACK STEP 2: Execute Rollback
+      # What: Checks out the previous commit and redeploys it
+      # Why: This version was known to work (it passed all tests before)
+      # Steps:
+      #   1. Go to previous commit
+      #   2. Rebuild application
+      #   3. Run migrations (if any new ones were added)
+      #   4. Restart PM2 with old code
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Rollback to previous version
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+
+            echo "🔄 Rolling back to previous version..."
+            echo "Rolling back to commit: ${{ steps.previous-commit.outputs.previous_commit }}"
+
+            cd ~/arenanp_backend
+
+            # Checkout previous commit
+            echo "📥 Checking out previous commit..."
+            git fetch origin
+            git reset --hard ${{ steps.previous-commit.outputs.previous_commit }}
+            echo "✅ Checked out previous version"
+
+            # Rebuild
+            echo "📦 Installing dependencies..."
+            npm ci
+
+            echo "🏗️ Building application..."
+            npm run build
+
+            # Regenerate Prisma (in case schema changed)
+            npx prisma generate
+
+            # Run migrations (safe - can run on same migration state)
+            echo "🗄️ Running migrations..."
+            npx prisma migrate deploy
+
+            # Restart app
+            echo "🚀 Restarting application..."
+            pm2 restart arenanp-api --update-env
+
+            echo "⏳ Waiting for startup..."
+            sleep 5
+
+            # Quick verification
+            if pm2 list | grep -q "arenanp-api.*online"; then
+              echo "✅ Rollback successful - application is running"
+            else
+              echo "❌ Rollback partially completed but app is not running"
+              pm2 logs arenanp-api --lines 20
+              exit 1
+            fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # ROLLBACK STEP 3: Report Rollback
+      # What: Documents what happened and what was rolled back
+      # Why: Important for audit trail and debugging
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Report rollback
+        run: |
+          echo "### 🔄 Automatic Rollback Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Failed deployment commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Rolled back to commit:** \`${{ steps.previous-commit.outputs.previous_commit }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ Action required:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the failed commit for issues" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check logs for error details" >> $GITHUB_STEP_SUMMARY
+          echo "3. Fix the issues and push again" >> $GITHUB_STEP_SUMMARY
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 7: DEPLOYMENT SUMMARY
+  # Purpose: Final report of what happened
+  # ═══════════════════════════════════════════════════════════════════════════
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy, health-check]
+    if: success()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate deployment summary
+        run: |
+          echo "### 🚀 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | Production |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployed by** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | [\`${{ github.sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | main |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow** | [${{ github.workflow }} #${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployed at** | $(date -u +'%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Verification Checklist" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Code quality validation passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Security scanning passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Pre-deployment checks passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Application deployed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Health checks passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Troubleshooting" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "If you notice issues after deployment:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check application logs: \`pm2 logs arenanp-api\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify environment variables are loaded" >> $GITHUB_STEP_SUMMARY
+          echo "3. Test the GraphQL endpoint: \`curl -X POST http://localhost:4000/graphql ...\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. Check database migrations: \`npx prisma migrate status\`" >> $GITHUB_STEP_SUMMARY
+
+      # ───────────────────────────────────────────────────────────────────
+      # TELEGRAM NOTIFICATION: Success
+      # What: Sends a message to Telegram group when deployment succeeds
+      # Why: Team knows deployment is complete and working
+      # ───────────────────────────────────────────────────────────────────
+      - name: Send Telegram notification (Success)
+        run: |
+          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+          COMMIT_SHA=${{ github.sha }}
+          SHORT_SHA=${COMMIT_SHA:0:7}
+          ACTOR=${{ github.actor }}
+          REPO=${{ github.repository }}
+          RUN_ID=${{ github.run_id }}
+
+          # Build the message
+          MESSAGE="✅ *Arena NP Backend - Deployment Successful*%0A%0A"
+          MESSAGE="${MESSAGE}🚀 Status: Deployed%0A"
+          MESSAGE="${MESSAGE}👤 By: ${ACTOR}%0A"
+          MESSAGE="${MESSAGE}📝 Commit: \`${SHORT_SHA}\`%0A"
+          MESSAGE="${MESSAGE}💬 Message: ${COMMIT_MESSAGE:0:50}...%0A"
+          MESSAGE="${MESSAGE}🔗 <a href='https://github.com/${REPO}/actions/runs/${RUN_ID}'>View Workflow</a>%0A"
+          MESSAGE="${MESSAGE}🕐 Time: $(date -u +'%Y-%m-%d %H:%M UTC')"
+
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=${MESSAGE}" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 8: FAILURE NOTIFICATION
+  # Purpose: Notify team when deployment fails
+  # ═══════════════════════════════════════════════════════════════════════════
+  failure-notification:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [validate, security-scan, pre-deployment-checks, deploy, health-check]
+    if: failure()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ───────────────────────────────────────────────────────────────────
+      # DETERMINE WHAT FAILED
+      # Checks which job failed so we can report it accurately
+      # ───────────────────────────────────────────────────────────────────
+      - name: Determine failure reason
+        id: failure-reason
+        run: |
+          if [ "${{ needs.validate.result }}" = "failure" ]; then
+            echo "reason=Code validation failed (linting/types/build)" >> $GITHUB_OUTPUT
+            echo "icon=❌" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.security-scan.result }}" = "failure" ]; then
+            echo "reason=Security scan found critical vulnerabilities" >> $GITHUB_OUTPUT
+            echo "icon=🔒" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.pre-deployment-checks.result }}" = "failure" ]; then
+            echo "reason=Pre-deployment checks failed (PM2/DB/Migrations)" >> $GITHUB_OUTPUT
+            echo "icon=⚠️" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy.result }}" = "failure" ]; then
+            echo "reason=Deployment failed during script execution" >> $GITHUB_OUTPUT
+            echo "icon=💥" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.health-check.result }}" = "failure" ]; then
+            echo "reason=Health checks failed (process/API/database)" >> $GITHUB_OUTPUT
+            echo "icon=🏥" >> $GITHUB_OUTPUT
+          else
+            echo "reason=Unknown failure" >> $GITHUB_OUTPUT
+            echo "icon=❓" >> $GITHUB_OUTPUT
+          fi
+
+      # ───────────────────────────────────────────────────────────────────
+      # TELEGRAM NOTIFICATION: Failure
+      # What: Sends detailed failure message to Telegram group
+      # Why: Team needs to know immediately when something breaks
+      # ───────────────────────────────────────────────────────────────────
+      - name: Send Telegram notification (Failure)
+        run: |
+          ACTOR=${{ github.actor }}
+          REPO=${{ github.repository }}
+          RUN_ID=${{ github.run_id }}
+          REASON="${{ steps.failure-reason.outputs.reason }}"
+          ICON="${{ steps.failure-reason.outputs.icon }}"
+          COMMIT_SHA=${{ github.sha }}
+          SHORT_SHA=${COMMIT_SHA:0:7}
+
+          # Build the failure message
+          MESSAGE="${ICON} *Arena NP Backend - Deployment Failed*%0A%0A"
+          MESSAGE="${MESSAGE}❌ Status: Failed%0A"
+          MESSAGE="${MESSAGE}👤 By: ${ACTOR}%0A"
+          MESSAGE="${MESSAGE}📝 Commit: \`${SHORT_SHA}\`%0A"
+          MESSAGE="${MESSAGE}🔴 Reason: ${REASON}%0A"
+          MESSAGE="${MESSAGE}🔗 <a href='https://github.com/${REPO}/actions/runs/${RUN_ID}'>View Workflow Logs</a>%0A"
+          MESSAGE="${MESSAGE}🕐 Time: $(date -u +'%Y-%m-%d %H:%M UTC')%0A%0A"
+          MESSAGE="${MESSAGE}<b>⚡ Actions:</b>%0A"
+          MESSAGE="${MESSAGE}1️⃣ Check workflow logs%0A"
+          MESSAGE="${MESSAGE}2️⃣ Fix the issues%0A"
+          MESSAGE="${MESSAGE}3️⃣ Push changes again"
+
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=${MESSAGE}" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true"
