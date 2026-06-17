@@ -375,10 +375,7 @@ jobs:
             pm2 logs arenanp-api --lines 5 --nostream >> /tmp/deployment-state.txt 2>&1 || true
 
             cat /tmp/deployment-state.txt
-
-            # Extract current git SHA for rollback reference
-            CURRENT_SHA=$(cd ~/arenanp_backend && git rev-parse HEAD)
-            echo "CURRENT_SHA=$CURRENT_SHA" >> $GITHUB_ENV
+            echo "✅ Deployment state captured successfully"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # JOB 4: DEPLOY
