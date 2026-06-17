@@ -8,6 +8,8 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,14 +55,28 @@ jobs:
             echo "🚀 Restarting application..."
             pm2 restart arenanp-api --update-env
             echo "⏳ Waiting for startup..."
-            sleep 5
-            echo "✅ Checking application status..."
-            STATUS=$(pm2 show arenanp-api | grep status | awk '{print $NF}')
-            if [ "$STATUS" = "online" ]; then
-              echo "✅ Backend deployed successfully!"
-              curl -s http://localhost:4000/graphql -H 'content-type: application/json' -d '{"query":"{ __typename }"}' && echo "✅ API is responding"
+            sleep 8
+            echo "✅ Verifying deployment..."
+            # Check if process is running
+            if pm2 list | grep -q "arenanp-api.*online"; then
+              echo "✅ Backend process is online"
+              # Verify API is responding
+              if curl -sf http://localhost:4000/graphql -H 'content-type: application/json' -d '{"query":"{ __typename }"}' > /dev/null; then
+                echo "✅ API is responding correctly"
+                echo "✅ Deployment successful!"
+              else
+                echo "⚠️ Process is online but API not responding yet. Waiting..."
+                sleep 5
+                if curl -sf http://localhost:4000/graphql -H 'content-type: application/json' -d '{"query":"{ __typename }"}' > /dev/null; then
+                  echo "✅ API is now responding"
+                  echo "✅ Deployment successful!"
+                else
+                  echo "❌ API still not responding after retry"
+                  exit 1
+                fi
+              fi
             else
-              echo "❌ Application failed to start. Status: $STATUS"
-              pm2 logs arenanp-api --lines 30
+              echo "❌ Application failed to start"
+              pm2 logs arenanp-api --lines 50
               exit 1
             fi
