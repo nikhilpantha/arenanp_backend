@@ -489,7 +489,6 @@ jobs:
       - name: Check if process is running
         id: process-check
         uses: appleboy/ssh-action@master
-        continue-on-error: true
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
@@ -525,7 +524,6 @@ jobs:
       - name: Test GraphQL endpoint
         id: graphql-check
         uses: appleboy/ssh-action@master
-        continue-on-error: true
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
@@ -564,7 +562,6 @@ jobs:
       - name: Test database connectivity
         id: db-check
         uses: appleboy/ssh-action@master
-        continue-on-error: true
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
@@ -596,6 +593,7 @@ jobs:
       # SUMMARY: Report Health Check Results
       # What: Creates a summary showing which checks passed/failed
       # Why: Quick visual feedback in GitHub Actions UI
+      # Note: Uses 'always()' so summary shows even if checks failed
       # ─────────────────────────────────────────────────────────────────────
       - name: Health check summary
         if: always()
