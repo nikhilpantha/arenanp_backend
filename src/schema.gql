@@ -1094,6 +1094,14 @@ input ListSubscriptionsInput {
 input ListVenueBookingsInput {
   """Specific day (yyyy-mm-dd). Overrides scope when set."""
   date: String
+
+  """
+  Range start (yyyy-mm-dd, inclusive). With dateTo, overrides scope; ignored when date is set.
+  """
+  dateFrom: String
+
+  """Range end (yyyy-mm-dd, inclusive). Pair with dateFrom."""
+  dateTo: String
   scope: BookingScope
 
   """Filter by sport slug."""

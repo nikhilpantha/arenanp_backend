@@ -45,6 +45,20 @@ export class ListVenueBookingsInput {
   @Matches(DATE_RE, { message: 'date must be yyyy-mm-dd' })
   date?: string;
 
+  @Field({
+    nullable: true,
+    description:
+      'Range start (yyyy-mm-dd, inclusive). With dateTo, overrides scope; ignored when date is set.',
+  })
+  @IsOptional()
+  @Matches(DATE_RE, { message: 'dateFrom must be yyyy-mm-dd' })
+  dateFrom?: string;
+
+  @Field({ nullable: true, description: 'Range end (yyyy-mm-dd, inclusive). Pair with dateFrom.' })
+  @IsOptional()
+  @Matches(DATE_RE, { message: 'dateTo must be yyyy-mm-dd' })
+  dateTo?: string;
+
   @Field({ nullable: true, description: 'Filter by sport slug.' })
   @IsOptional()
   @IsString()

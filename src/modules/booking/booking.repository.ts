@@ -69,6 +69,10 @@ export class BookingRepository {
     if (input.date) {
       const { gte, lt } = dayBounds(new Date(`${input.date}T00:00:00.000Z`));
       where.startAt = { gte, lt };
+    } else if (input.dateFrom && input.dateTo) {
+      const { gte } = dayBounds(new Date(`${input.dateFrom}T00:00:00.000Z`));
+      const { lt } = dayBounds(new Date(`${input.dateTo}T00:00:00.000Z`));
+      where.startAt = { gte, lt }; // [dateFrom 00:00, dateTo+1 00:00) — inclusive range
     } else if (input.scope === BookingScope.TODAY) {
       const { gte, lt } = dayBounds(new Date());
       where.startAt = { gte, lt };
