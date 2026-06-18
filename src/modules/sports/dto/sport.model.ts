@@ -11,6 +11,8 @@ export class SportModel {
   @Field({ nullable: true }) description?: string;
   @Field(() => [String], { description: 'Amenity presets to offer for this sport.' })
   features!: string[];
+  @Field(() => [Int], { description: 'Allowed booking slot lengths (minutes) for this sport.' })
+  slotDurations!: number[];
   @Field(() => Int) displayOrder!: number;
 }
 
@@ -22,6 +24,7 @@ export function mapSport(row: PrismaSport): SportModel {
     iconUrl: row.iconUrl ?? undefined,
     description: row.description ?? undefined,
     features: row.features,
+    slotDurations: row.slotDurations,
     displayOrder: row.displayOrder,
   };
 }

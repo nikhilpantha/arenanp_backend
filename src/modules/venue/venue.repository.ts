@@ -25,15 +25,39 @@ const MEMBERSHIP_INCLUDES = {
   venue: { select: { name: true, verificationStatus: true } },
 } satisfies Prisma.VenueMembershipInclude;
 
-/** Build N court rows for a service, naming them sequentially when there are several. */
+/**
+ * Build the court rows for a service. Prefers explicit per-court detail (`courts[]`)
+ * when the client sends it; otherwise falls back to the legacy "N identical courts"
+ * shape (`courtCount` + a single slot/price). Courts are named sequentially when
+ * there are several and no explicit name was given.
+ */
 function courtsForService(
   sport: Sport,
-  svc: { courtCount: number; slotMinutes: number; pricePerHour: number; features: string[] },
+  svc: {
+    courts?: { name?: string; slotMinutes: number; pricePerHour: number }[];
+    courtCount: number;
+    slotMinutes: number;
+    pricePerHour?: number;
+    features: string[];
+  },
 ): Prisma.CourtCreateManyVenueInput[] {
+  if (svc.courts?.length) {
+    const many = svc.courts.length > 1;
+    return svc.courts.map((c, i) => ({
+      name: c.name?.trim() || (many ? `${sport.name} ${i + 1}` : sport.name),
+      sportId: sport.id,
+      pricePerHour: c.pricePerHour,
+      slotMinutes: c.slotMinutes,
+      features: svc.features,
+    }));
+  }
+
+  // Legacy path: N identical courts at one slot/price.
+  const pricePerHour = svc.pricePerHour ?? 0;
   return Array.from({ length: svc.courtCount }, (_, i) => ({
     name: svc.courtCount > 1 ? `${sport.name} ${i + 1}` : sport.name,
     sportId: sport.id,
-    pricePerHour: svc.pricePerHour,
+    pricePerHour,
     slotMinutes: svc.slotMinutes,
     features: svc.features,
   }));

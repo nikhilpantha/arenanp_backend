@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -52,6 +53,18 @@ export class CreateSportInput {
   @MaxLength(60, { each: true })
   @ArrayMaxSize(40)
   features?: string[] = [];
+
+  @Field(() => [Int], {
+    defaultValue: [30, 60, 90, 120],
+    description: 'Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120].',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(5, { each: true })
+  @Max(600, { each: true })
+  @ArrayMaxSize(12)
+  slotDurations?: number[] = [30, 60, 90, 120];
 
   @Field(() => Int, { defaultValue: 0 })
   @IsOptional()
@@ -106,6 +119,18 @@ export class UpdateSportInput {
   @MaxLength(60, { each: true })
   @ArrayMaxSize(40)
   features?: string[];
+
+  @Field(() => [Int], {
+    nullable: true,
+    description: 'Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120].',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(5, { each: true })
+  @Max(600, { each: true })
+  @ArrayMaxSize(12)
+  slotDurations?: number[];
 
   @Field(() => Int, { nullable: true })
   @IsOptional()

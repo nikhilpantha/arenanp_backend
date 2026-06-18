@@ -113,6 +113,7 @@ model User {
   venueInvitationsCreated  VenueInvitation[] @relation("UserVenueInvitationsCreated")
   venueInvitationsAccepted VenueInvitation[] @relation("UserVenueInvitationsAccepted")
   sportsCreated            Sport[]           @relation("UserSportsCreated")
+  venueClosuresCreated     VenueClosure[]    @relation("UserVenueClosuresCreated")
 
   @@index([role])
   @@map("users")

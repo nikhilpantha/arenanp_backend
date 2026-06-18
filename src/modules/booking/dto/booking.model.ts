@@ -1,6 +1,7 @@
 import { Field, Float, ID, Int, ObjectType } from '@nestjs/graphql';
 import {
   Booking as PrismaBooking,
+  BookingExtra as PrismaBookingExtra,
   BookingPaymentStatus,
   BookingSource,
   BookingStatus,
@@ -13,6 +14,13 @@ import { Decimal } from '@prisma/client/runtime/library';
 
 import '../../../common/enums';
 import { mapSportStub, SportStub } from '../../admin/sports/dto/sport-stub.model';
+
+@ObjectType({ description: 'A single add-on service charged on a booking.' })
+export class BookingExtraModel {
+  @Field(() => ID) id!: string;
+  @Field() name!: string;
+  @Field(() => Float) price!: number;
+}
 
 @ObjectType({ description: 'A court booking as managed from the venue panel.' })
 export class BookingModel {
@@ -36,6 +44,8 @@ export class BookingModel {
   @Field(() => Float) pricePerHour!: number;
   @Field(() => Float) subtotal!: number;
   @Field(() => Float) discountAmount!: number;
+  @Field(() => [BookingExtraModel]) extras!: BookingExtraModel[];
+  @Field(() => Float) extrasTotal!: number;
   @Field(() => Float) total!: number;
   @Field() freeGame!: boolean;
 
@@ -48,13 +58,18 @@ export class BookingModel {
 }
 
 type CourtWithSport = PrismaCourt & { sport: PrismaSport };
-export type BookingWithRelations = PrismaBooking & { court: CourtWithSport };
+export type BookingWithRelations = PrismaBooking & {
+  court: CourtWithSport;
+  extras?: PrismaBookingExtra[];
+};
 
 function num(value: Decimal): number {
   return Number(value.toString());
 }
 
 export function mapBookingToGraphql(b: BookingWithRelations): BookingModel {
+  const extras = (b.extras ?? []).map((e) => ({ id: e.id, name: e.name, price: num(e.price) }));
+  const extrasTotal = extras.reduce((sum, e) => sum + e.price, 0);
   return {
     id: b.id,
     courtId: b.courtId,
@@ -71,6 +86,8 @@ export function mapBookingToGraphql(b: BookingWithRelations): BookingModel {
     pricePerHour: num(b.pricePerHour),
     subtotal: num(b.subtotal),
     discountAmount: num(b.discountAmount),
+    extras,
+    extrasTotal,
     total: num(b.total),
     freeGame: b.freeGame,
     paymentStatus: b.paymentStatus,

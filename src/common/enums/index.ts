@@ -9,11 +9,16 @@ import {
   DisputeCategory,
   DisputeStatus,
   MatchStatus,
+  MembershipDuration,
   MembershipStatus,
+  OfferAudience,
+  OfferDiscountType,
+  OfferTrigger,
   PaymentProvider,
   PaymentStatus,
   RefundStatus,
   SettlementStatus,
+  SubscriptionStatus,
   TournamentRegistrationStatus,
   TournamentStatus,
   TournamentVisibility,
@@ -133,6 +138,33 @@ registerEnumType(MatchStatus, {
   description: 'State of a tournament match.',
 });
 
+registerEnumType(OfferDiscountType, {
+  name: 'OfferDiscountType',
+  description: 'How an offer reduces a booking subtotal: PERCENT, FLAT or FREE_GAME.',
+});
+
+registerEnumType(OfferTrigger, {
+  name: 'OfferTrigger',
+  description: 'What triggers an offer: PROMO_CODE (code entry) or EVERY_NTH (loyalty reward).',
+});
+
+registerEnumType(OfferAudience, {
+  name: 'OfferAudience',
+  description: 'Who a loyalty offer applies to: ALL, INDIVIDUAL or TEAM.',
+});
+
+registerEnumType(MembershipDuration, {
+  name: 'MembershipDuration',
+  description:
+    'How long a membership plan runs before renewal: WEEKLY, FORTNIGHTLY, MONTHLY, QUARTERLY, HALF_YEARLY or YEARLY.',
+});
+
+registerEnumType(SubscriptionStatus, {
+  name: 'SubscriptionStatus',
+  description:
+    "A subscription's lifecycle: ACTIVE -> (PAUSED) -> EXPIRED, with CANCELLED as a terminal sink.",
+});
+
 export {
   BookingPaymentStatus,
   BookingSource,
@@ -143,11 +175,16 @@ export {
   DisputeCategory,
   DisputeStatus,
   MatchStatus,
+  MembershipDuration,
   MembershipStatus,
+  OfferAudience,
+  OfferDiscountType,
+  OfferTrigger,
   PaymentProvider,
   PaymentStatus,
   RefundStatus,
   SettlementStatus,
+  SubscriptionStatus,
   TournamentRegistrationStatus,
   TournamentStatus,
   TournamentVisibility,

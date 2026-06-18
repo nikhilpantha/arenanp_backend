@@ -19,10 +19,15 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { BookingModule } from './modules/booking/booking.module';
+import { DiscoveryModule } from './modules/discovery/discovery.module';
+import { OffersModule } from './modules/offers/offers.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { CapabilitiesModule } from './modules/capabilities/capabilities.module';
 import { VenueModule } from './modules/venue/venue.module';
 import { VenueInvitationsModule } from './modules/venue-invitations/venue-invitations.module';
 import { SportsModule } from './modules/sports/sports.module';
+import { ClosuresModule } from './modules/closures/closures.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -58,8 +63,13 @@ import { HealthController } from './health.controller';
     AdminModule,
     VenueModule,
     BookingModule,
+    DiscoveryModule,
+    OffersModule,
+    CustomersModule,
+    SubscriptionsModule,
     VenueInvitationsModule,
     SportsModule,
+    ClosuresModule,
   ],
   controllers: [HealthController],
 })
