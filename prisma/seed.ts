@@ -3,18 +3,6 @@ import { PrismaClient, UserRole } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const DEFAULT_SPORTS = [
-  { slug: 'futsal', name: 'Futsal', displayOrder: 10 },
-  { slug: 'football', name: 'Football', displayOrder: 20 },
-  { slug: 'cricket', name: 'Cricket', displayOrder: 30 },
-  { slug: 'indoor-cricket', name: 'Indoor Cricket', displayOrder: 35 },
-  { slug: 'basketball', name: 'Basketball', displayOrder: 40 },
-  { slug: 'volleyball', name: 'Volleyball', displayOrder: 50 },
-  { slug: 'badminton', name: 'Badminton', displayOrder: 60 },
-  { slug: 'tennis', name: 'Tennis', displayOrder: 70 },
-  { slug: 'table-tennis', name: 'Table Tennis', displayOrder: 80 },
-];
-
 async function main() {
   const phone = process.env.SEED_SUPER_ADMIN_PHONE ?? '+9779800000000';
   const name = process.env.SEED_SUPER_ADMIN_NAME ?? 'Arena NP Admin';
@@ -46,21 +34,6 @@ async function main() {
   console.log(`  phone: ${admin.phoneNumber}`);
   console.log(`  email: ${admin.email}`);
   console.log(`  password: (from SEED_SUPER_ADMIN_PASSWORD env)`);
-
-  // ── Sports catalogue ────────────────────────────────────────────────────
-  for (const sport of DEFAULT_SPORTS) {
-    await prisma.sport.upsert({
-      where: { slug: sport.slug },
-      update: { name: sport.name, displayOrder: sport.displayOrder },
-      create: {
-        slug: sport.slug,
-        name: sport.name,
-        displayOrder: sport.displayOrder,
-        createdById: admin.id,
-      },
-    });
-  }
-  console.log(`Seeded ${DEFAULT_SPORTS.length} default sports.`);
 }
 
 main()

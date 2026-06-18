@@ -1,0 +1,124 @@
+// ─── Memberships / subscriptions ────────────────────────────────────────────
+
+/// How long a membership plan runs before it needs renewing. Drives the
+/// subscription's validity window (see MembershipPlan.validityDays).
+enum MembershipDuration {
+  WEEKLY
+  FORTNIGHTLY
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+}
+
+/// Lifecycle of a customer's subscription. SCHEDULED before its start date; ACTIVE
+/// while inside [startedAt, expiresAt]; PAUSED by staff; EXPIRED once past expiresAt;
+/// CANCELLED is a terminal sink. ("Expiring soon" is derived from expiresAt, not stored.)
+enum SubscriptionStatus {
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+/// A venue-owned membership plan (the product a customer subscribes to). Pricing,
+/// the validity window and the access rules (days/hours/sports) are captured here
+/// so a subscription can snapshot them at purchase time.
+model MembershipPlan {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  price       Decimal            @db.Decimal(10, 2)
+  duration    MembershipDuration @default(MONTHLY)
+  /// Validity window in days (derived from `duration` at create time; stored so
+  /// historical plans keep their window even if the mapping changes later).
+  validityDays Int
+
+  /// Length of one daily session in minutes (e.g. 60 = 1 hour). Owner-set per plan.
+  sessionMinutes Int @default(60)
+  /// Allowed subscription time bands as "HH:mm-HH:mm" (e.g. ["06:00-08:00","20:00-22:00"]).
+  /// A member's chosen slot must fit inside one of these; the rest of the day stays
+  /// open for normal bookings.
+  windows    String[] @default([])
+  /// Qualifying days of week ("sun".."sat").
+  daysOfWeek String[] @default([])
+  /// Sport slugs this plan includes.
+  sports     String[] @default([])
+
+  /// Display-only hint shown on the plan card (e.g. "Popular").
+  highlight String?
+  isActive  Boolean @default(true)
+
+  subscriptions Subscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([venueId, isActive])
+  @@map("membership_plans")
+}
+
+/// A customer's subscription to a plan. The member holds a recurring daily slot
+/// (`slotStart` + the plan's session length) on the plan's days. Money is snapshotted
+/// per payment; renewals extend `expiresAt`. Loyalty/games live in the offers engine.
+model Subscription {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  planId String
+  plan   MembershipPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  /// The physical court this subscription reserves. Its recurring slot blocks normal
+  /// bookings on that court at the same time / days within [startedAt, expiresAt].
+  courtId String
+  court   Court  @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  status    SubscriptionStatus @default(ACTIVE)
+  /// Owner-picked start date; expiry = startedAt + plan.validityDays.
+  startedAt DateTime
+  expiresAt DateTime
+
+  /// The member's chosen daily start time ("HH:mm"); the slot runs `sessionMinutes`
+  /// from here and must sit inside one of the plan's `windows`.
+  slotStart String
+
+  payments SubscriptionPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([venueId, status])
+  @@index([customerId])
+  @@index([planId])
+  @@index([courtId, status])
+  @@map("subscriptions")
+}
+
+/// A payment against a subscription — the first purchase and every renewal. Doubles
+/// as the renewal history (`periodDays` records the window the payment bought).
+model SubscriptionPayment {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  amount Decimal              @db.Decimal(10, 2)
+  method PaymentProvider?
+  status BookingPaymentStatus @default(PAID)
+  /// The validity window (days) this payment extended the subscription by.
+  periodDays Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([subscriptionId])
+  @@map("subscription_payments")
+}

@@ -1,0 +1,70 @@
+// ─── Venue offers (discounts / promo codes) ─────────────────────────────────
+
+/// How an offer reduces a booking's subtotal.
+enum OfferDiscountType {
+  PERCENT
+  FLAT
+  /// Loyalty reward: zeroes the booking total (a free game).
+  FREE_GAME
+}
+
+/// What makes an offer applicable to a booking.
+/// PROMO_CODE — the existing code-entry discount (default).
+/// EVERY_NTH — a loyalty reward earned automatically after every Nth completed game.
+enum OfferTrigger {
+  PROMO_CODE
+  EVERY_NTH
+}
+
+/// Who a loyalty offer applies to (by booking subject).
+enum OfferAudience {
+  ALL
+  INDIVIDUAL
+  TEAM
+}
+
+/// A venue-created discount. Applies venue-wide to a player booking whose subtotal
+/// meets `minSubtotal`, within [validFrom, validUntil] while `isActive`. PERCENT
+/// offers take `discountValue`% capped at `maxDiscount`; FLAT offers take a fixed
+/// `discountValue`. An optional `code` makes it a promo code (stored upper-cased,
+/// unique per venue). `usageCount`/`usageLimit` bound total redemptions.
+model Offer {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+
+  discountType  OfferDiscountType
+  discountValue Decimal  @db.Decimal(10, 2)
+  maxDiscount   Decimal? @db.Decimal(10, 2)
+  minSubtotal   Decimal  @default(0) @db.Decimal(10, 2)
+
+  /// How the offer is triggered, and (for loyalty) who it applies to.
+  trigger    OfferTrigger  @default(PROMO_CODE)
+  audience   OfferAudience @default(ALL)
+  /// For EVERY_NTH loyalty offers: grant a free game after every N completed games.
+  everyGames Int?
+
+  /// Optional promo code, upper-cased; null = an always-listed offer (no code).
+  code String?
+
+  validFrom  DateTime
+  validUntil DateTime
+  isActive   Boolean  @default(true)
+
+  usageLimit Int?
+  usageCount Int  @default(0)
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([venueId, code])
+  @@index([venueId])
+  @@index([venueId, isActive])
+  @@index([validUntil])
+  @@map("offers")
+}

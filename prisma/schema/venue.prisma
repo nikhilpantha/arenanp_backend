@@ -59,6 +59,11 @@ model Venue {
   tournaments Tournament[]
   matches     Match[]
   venueSports VenueSport[]
+  offers      Offer[]
+  customers   Customer[]
+  membershipPlans MembershipPlan[]
+  subscriptions   Subscription[]
+  closures        VenueClosure[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -90,8 +95,10 @@ model Court {
   isActive     Boolean  @default(true)
   imageUrls    String[] @default([])
 
-  bookings Booking[]
-  matches  Match[]
+  bookings      Booking[]
+  matches       Match[]
+  subscriptions Subscription[]
+  closures      VenueClosure[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -99,6 +106,37 @@ model Court {
   @@index([venueId])
   @@index([sportId])
   @@map("courts")
+}
+
+/// A venue-owner-initiated block on bookings for a time window. Covers both a
+/// short block on one court (3–4 hrs) and a multi-day full-venue closure — the
+/// difference is only the time span and whether `courtId` is set.
+///
+/// `courtId = null` blocks every court in the venue (a venue-wide closure);
+/// a set `courtId` blocks just that court. Times are absolute UTC instants
+/// (Nepal wall time converted at write), so the same overlap test the booking
+/// flow uses works unchanged. Enforced at slot generation, walk-in create/edit,
+/// and online player booking.
+model VenueClosure {
+  id      String  @id @default(cuid())
+  venueId String
+  venue   Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  courtId String?
+  court   Court?  @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  startAt DateTime
+  endAt   DateTime
+  reason  String?
+
+  createdById String?
+  createdBy   User?   @relation("UserVenueClosuresCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId, startAt])
+  @@index([courtId, startAt])
+  @@map("venue_closures")
 }
 
 /// Platform-managed catalogue of sports. The admin manages this list at
@@ -117,6 +155,9 @@ model Sport {
   /// ["Indoor", "Floodlights", "5-a-side"]). Admin-managed; the app shows these
   /// as selectable chips during venue setup.
   features     String[] @default([])
+  /// Allowed booking slot lengths in minutes for this sport (e.g. [30, 60, 90, 120]).
+  /// Admin-managed; the app shows these as the slot-duration choices during venue setup.
+  slotDurations Int[]   @default([30, 60, 90, 120])
 
   createdById String?
   createdBy   User?   @relation("UserSportsCreated", fields: [createdById], references: [id], onDelete: SetNull)

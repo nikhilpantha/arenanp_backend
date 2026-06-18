@@ -16,6 +16,8 @@ export class AdminSport {
   @Field({ nullable: true }) description?: string;
   @Field(() => [String], { description: 'Amenity presets offered for this sport.' })
   features!: string[];
+  @Field(() => [Int], { description: 'Allowed booking slot lengths (minutes) for this sport.' })
+  slotDurations!: number[];
   @Field(() => Int) displayOrder!: number;
   @Field() isActive!: boolean;
 
@@ -37,6 +39,7 @@ export function mapSportToAdmin(row: SportWithCreator): AdminSport {
     iconUrl: row.iconUrl ?? undefined,
     description: row.description ?? undefined,
     features: row.features,
+    slotDurations: row.slotDurations,
     displayOrder: row.displayOrder,
     isActive: row.isActive,
     createdBy: row.createdBy ? mapPrismaUserToAdmin(row.createdBy) : undefined,

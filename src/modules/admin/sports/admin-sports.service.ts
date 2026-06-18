@@ -44,6 +44,7 @@ export class AdminSportsService {
       iconUrl: input.iconUrl?.trim() || null,
       description: input.description?.trim() || null,
       features: normaliseFeatures(input.features),
+      slotDurations: normaliseSlotDurations(input.slotDurations),
       displayOrder: input.displayOrder ?? 0,
       isActive: input.isActive ?? true,
       createdById: actor.id,
@@ -73,6 +74,10 @@ export class AdminSportsService {
         description:
           input.description === undefined ? undefined : input.description?.trim() || null,
         features: input.features === undefined ? undefined : normaliseFeatures(input.features),
+        slotDurations:
+          input.slotDurations === undefined
+            ? undefined
+            : normaliseSlotDurations(input.slotDurations),
         displayOrder: input.displayOrder ?? undefined,
         isActive: input.isActive ?? undefined,
       },
@@ -128,4 +133,15 @@ function normaliseFeatures(features?: string[]): string[] {
     }
   }
   return out;
+}
+
+/** Default slot lengths when an admin clears the list — the app needs at least one option. */
+const DEFAULT_SLOT_DURATIONS = [30, 60, 90, 120];
+
+/** Keep positive whole minutes, de-duplicate, and sort ascending; fall back to defaults. */
+function normaliseSlotDurations(durations?: number[]): number[] {
+  const cleaned = Array.from(
+    new Set((durations ?? []).filter((d) => Number.isInteger(d) && d > 0)),
+  ).sort((a, b) => a - b);
+  return cleaned.length ? cleaned : DEFAULT_SLOT_DURATIONS;
 }

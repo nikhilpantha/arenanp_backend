@@ -23,3 +23,14 @@ export function isValidNepalPhone(input: string): boolean {
     return false;
   }
 }
+
+/**
+ * Lenient canonical key for matching the same person across bookings (loyalty).
+ * Strips non-digits and a leading 977 country code; never throws. Returns the
+ * 10-digit core when recognisable, otherwise the raw digits.
+ */
+export function phoneKey(input: string): string {
+  const digits = input.replace(/[^\d]/g, '');
+  const core = digits.startsWith('977') ? digits.slice(3) : digits;
+  return core;
+}

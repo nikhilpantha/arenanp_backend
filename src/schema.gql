@@ -2,6 +2,11 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+input AcceptVenueBookingInput {
+  bookingId: ID!
+  venueId: ID!
+}
+
 input AcceptVenueInvitationInput {
   """New password — 8 characters minimum."""
   password: String!
@@ -273,6 +278,9 @@ type AdminSport {
   id: ID!
   isActive: Boolean!
   name: String!
+
+  """Allowed booking slot lengths (minutes) for this sport."""
+  slotDurations: [Int!]!
   slug: String!
   updatedAt: DateTime!
 }
@@ -494,6 +502,18 @@ type AuthPayload {
   user: User!
 }
 
+input BookingExtraInput {
+  name: String!
+  price: Float! = 0
+}
+
+"""A single add-on service charged on a booking."""
+type BookingExtraModel {
+  id: ID!
+  name: String!
+  price: Float!
+}
+
 """A court booking as managed from the venue panel."""
 type BookingModel {
   amountPaid: Float!
@@ -506,6 +526,8 @@ type BookingModel {
   discountAmount: Float!
   durationMinutes: Int!
   endAt: DateTime!
+  extras: [BookingExtraModel!]!
+  extrasTotal: Float!
   freeGame: Boolean!
   id: ID!
   notes: String
@@ -565,11 +587,36 @@ type BookingTrendPoint {
   date: String!
 }
 
+"""Compact venue reference embedded in a player booking."""
+type BookingVenueStub {
+  address: String
+  city: String
+  id: ID!
+  name: String!
+}
+
+input BrowseVenuesInput {
+  """Filter by city."""
+  city: String
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+
+  """Free-text search on venue name."""
+  search: String
+
+  """Filter by sport slug."""
+  sportSlug: String
+}
+
 input CancelBookingByAdminInput {
   bookingId: ID!
 
   """Required reason. Shown to the booker on their booking timeline."""
   reason: String!
+}
+
+input CancelMyBookingInput {
+  bookingId: ID!
+  reason: String
 }
 
 input CancelTournamentInput {
@@ -599,6 +646,18 @@ enum CapabilityType {
   VENUE
 }
 
+"""A venue-owner block on bookings — one court or the whole venue."""
+type ClosureModel {
+  """Blocked court; null = whole venue."""
+  courtId: ID
+  createdAt: DateTime!
+  endAt: DateTime!
+  id: ID!
+  reason: String
+  startAt: DateTime!
+  venueId: ID!
+}
+
 """
 Commission breakdown for a payment. Live-computed when no Settlement row exists, otherwise reflects the snapshot stored on the Settlement.
 """
@@ -613,9 +672,76 @@ type CommissionBreakdown {
   venueSettlementAmount: Float!
 }
 
+input CompleteVenueBookingInput {
+  amountPaid: Float
+  bookingId: ID!
+  extras: [BookingExtraInput!]! = []
+  note: String
+  paymentMethod: PaymentProvider
+  paymentStatus: BookingPaymentStatus! = PAID
+  venueId: ID!
+}
+
+"""A single bookable time window for a court."""
+type CourtSlot {
+  """False if already booked or in the past."""
+  available: Boolean!
+  endAt: DateTime!
+
+  """Price for this slot at the court rate."""
+  price: Float!
+  startAt: DateTime!
+}
+
+"""Bookable slots for a court on a given venue-local day."""
+type CourtSlots {
+  courtId: ID!
+
+  """The requested day (yyyy-mm-dd, venue-local)."""
+  date: String!
+  slotMinutes: Int!
+  slots: [CourtSlot!]!
+}
+
+input CourtSlotsInput {
+  courtId: ID!
+
+  """Day to list slots for (yyyy-mm-dd, venue-local)."""
+  date: String!
+}
+
 input CreateAdminNoteOnDisputeInput {
   body: String!
   disputeId: ID!
+}
+
+input CreateBookingInput {
+  courtId: ID!
+
+  """Defaults to the court slot length."""
+  durationMinutes: Int
+  notes: String
+
+  """Promo code to apply (venue offer)."""
+  offerCode: String
+
+  """Slot start (ISO 8601)."""
+  startAt: String!
+}
+
+input CreateClosureInput {
+  """Court to block; omit to close the whole venue (all courts)."""
+  courtId: ID
+
+  """Block end (absolute instant); must be after startAt."""
+  endAt: DateTime!
+
+  """Shown to players, e.g. "Maintenance", "Dashain"."""
+  reason: String
+
+  """Block start (absolute instant)."""
+  startAt: DateTime!
+  venueId: ID!
 }
 
 """
@@ -626,6 +752,49 @@ type CreateInvitationResult {
 
   """Only set when MAIL_PROVIDER=stub."""
   setupUrl: String
+}
+
+input CreateMembershipPlanInput {
+  daysOfWeek: [String!]
+  description: String
+  duration: MembershipDuration!
+  highlight: String
+  name: String!
+  price: Float!
+
+  """Session length in minutes (e.g. 60)."""
+  sessionMinutes: Int!
+  sports: [String!]
+
+  """Override the validity window (days)."""
+  validityDays: Int
+  venueId: ID!
+
+  """Allowed bands as "HH:mm-HH:mm" (at least one)."""
+  windows: [String!]!
+}
+
+input CreateOfferInput {
+  audience: OfferAudience
+
+  """Promo code; stored upper-cased. Omit for an always-listed offer."""
+  code: String
+  description: String
+  discountType: OfferDiscountType!
+  discountValue: Float!
+
+  """For EVERY_NTH: free game every N games."""
+  everyGames: Int
+  maxDiscount: Float
+  minSubtotal: Float! = 0
+  title: String!
+  trigger: OfferTrigger
+
+  """Total redemptions allowed; null = unlimited."""
+  usageLimit: Int
+  validFrom: DateTime!
+  validUntil: DateTime!
+  venueId: ID!
 }
 
 input CreateSportInput {
@@ -640,10 +809,31 @@ input CreateSportInput {
   """Display name (e.g. "Table Tennis")."""
   name: String!
 
+  """Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120]."""
+  slotDurations: [Int!]! = [30, 60, 90, 120]
+
   """
   URL-safe slug. Auto-generated from `name` if omitted. Lowercase letters, digits and hyphens only.
   """
   slug: String
+}
+
+input CreateSubscriptionInput {
+  """Amount collected now; defaults to price."""
+  amountPaid: Float
+
+  """Court the recurring slot reserves."""
+  courtId: ID!
+  customerId: ID!
+  paymentMethod: PaymentProvider
+  planId: ID!
+
+  """Chosen daily start time ("HH:mm"); must fit a plan band."""
+  slotStart: String!
+
+  """Subscription start date (ISO); expiry = start + plan validity."""
+  startDate: DateTime!
+  venueId: ID!
 }
 
 """Ask the backend for a presigned URL to upload one file directly to S3."""
@@ -665,6 +855,9 @@ input CreateUploadUrlInput {
 input CreateVenueBookingInput {
   amountPaid: Float
   courtId: ID!
+
+  """The venue customer this booking is for."""
+  customerId: ID
   customerName: String!
   customerPhone: String
   customerType: CustomerType! = INDIVIDUAL
@@ -674,9 +867,17 @@ input CreateVenueBookingInput {
   notes: String
   paymentMethod: PaymentProvider
   paymentStatus: BookingPaymentStatus! = PENDING
+  redeemFreeGame: Boolean! = false
 
   """Start time (ISO 8601)."""
   startAt: String!
+  venueId: ID!
+}
+
+input CreateVenueCustomerInput {
+  name: String!
+  notes: String
+  phone: String
   venueId: ID!
 }
 
@@ -691,6 +892,12 @@ enum CustomerType {
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
+
+input DeclineVenueBookingInput {
+  bookingId: ID!
+  reason: String
+  venueId: ID!
+}
 
 """Subject area of a dispute. Used for routing + analytics."""
 enum DisputeCategory {
@@ -847,6 +1054,18 @@ input ListAdminVenuesInput {
   verificationStatus: VenueVerificationStatus
 }
 
+input ListClosuresInput {
+  """Only closures that have not yet ended."""
+  upcomingOnly: Boolean
+  venueId: ID!
+}
+
+input ListMembershipPlansInput {
+  """Only plans that are currently active."""
+  activeOnly: Boolean
+  venueId: ID!
+}
+
 input ListOrganizerVerificationRequestsInput {
   pagination: PaginationInput! = {page: 1, pageSize: 20}
 
@@ -858,6 +1077,20 @@ input ListOrganizerVerificationRequestsInput {
   status: CapabilityStatus
 }
 
+input ListSubscriptionsInput {
+  pagination: PaginationInput
+
+  """Only members on this membership plan."""
+  planId: ID
+
+  """Case-insensitive customer name / phone search."""
+  search: String
+
+  """Filter by status. Omit to list everything except CANCELLED."""
+  status: SubscriptionStatus
+  venueId: ID!
+}
+
 input ListVenueBookingsInput {
   """Specific day (yyyy-mm-dd). Overrides scope when set."""
   date: String
@@ -865,6 +1098,25 @@ input ListVenueBookingsInput {
 
   """Filter by sport slug."""
   sportSlug: String
+  venueId: ID!
+}
+
+input ListVenueCustomersInput {
+  """Max rows to return (page size). Defaults to 20."""
+  limit: Int
+
+  """Rows to skip (offset paging). Defaults to 0."""
+  offset: Int
+
+  """Case-insensitive name / phone search."""
+  search: String
+  venueId: ID!
+}
+
+input ListVenueOffersInput {
+  """Only currently-active + in-window offers."""
+  activeOnly: Boolean
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
   venueId: ID!
 }
 
@@ -887,6 +1139,35 @@ input LoginWithEmailInput {
 input LoginWithPhoneInput {
   password: String!
   phoneNumber: String!
+}
+
+"""A loyalty subject: pass exactly one of customerId / userId / phone."""
+input LoyaltyStatusInput {
+  customerId: ID
+  phone: String
+  userId: ID
+  venueId: ID!
+}
+
+"""A subject's loyalty progress toward a free game at a venue."""
+type LoyaltyStatusModel {
+  """Whether the venue has an active loyalty offer for this audience."""
+  configured: Boolean!
+
+  """Free game every N games (when configured)."""
+  every: Int
+
+  """Qualifying completed games toward the current cycle."""
+  gamesPlayed: Int!
+
+  """The loyalty offer to redeem, when ready."""
+  offerId: ID
+
+  """A free game is available to redeem now."""
+  ready: Boolean!
+
+  """Games remaining to the next free game (0 = ready now)."""
+  toNext: Int!
 }
 
 input MarkBookingCompletedInput {
@@ -926,6 +1207,50 @@ enum MatchStatus {
 }
 
 """
+How long a membership plan runs before renewal: WEEKLY, FORTNIGHTLY, MONTHLY, QUARTERLY, HALF_YEARLY or YEARLY.
+"""
+enum MembershipDuration {
+  FORTNIGHTLY
+  HALF_YEARLY
+  MONTHLY
+  QUARTERLY
+  WEEKLY
+  YEARLY
+}
+
+"""A venue-owned membership plan customers can subscribe to."""
+type MembershipPlanModel {
+  """Active subscribers on this plan."""
+  activeSubscribers: Int!
+  createdAt: DateTime!
+  daysOfWeek: [String!]!
+  description: String
+  duration: MembershipDuration!
+  highlight: String
+  id: ID!
+  isActive: Boolean!
+  name: String!
+  price: Float!
+
+  """Session length in minutes (e.g. 60 = 1 hour)."""
+  sessionMinutes: Int!
+  sports: [String!]!
+  validityDays: Int!
+  venueId: ID!
+
+  """Allowed subscription bands as "HH:mm-HH:mm"."""
+  windows: [String!]!
+}
+
+"""Venue membership KPIs for the dashboard."""
+type MembershipStatsModel {
+  activeMembers: Int!
+  expiringSoon: Int!
+  monthlyRevenue: Float!
+  renewalRatePct: Int!
+}
+
+"""
 Lifecycle of a venue membership (staff seat): INVITED, ACTIVE, SUSPENDED.
 """
 enum MembershipStatus {
@@ -935,6 +1260,9 @@ enum MembershipStatus {
 }
 
 type Mutation {
+  """Accept (confirm) a pending online booking."""
+  acceptVenueBooking(input: AcceptVenueBookingInput!): BookingModel!
+
   """
   Set the new account’s password, mark the invitation accepted, and return an access token so the user is signed in immediately.
   """
@@ -1045,12 +1373,52 @@ type Mutation {
   adminUpdateVenueVerificationStatus(input: UpdateVenueVerificationStatusInput!): AdminVenue!
 
   """
+  Cancel one of your own bookings (only before it reaches a terminal state).
+  """
+  cancelMyBooking(input: CancelMyBookingInput!): PlayerBookingModel!
+
+  """
+  Complete a booking with add-on extras and final payment (writes a status event).
+  """
+  completeVenueBooking(input: CompleteVenueBookingInput!): BookingModel!
+
+  """Book a court slot as a player. Starts PENDING until the venue accepts."""
+  createBooking(input: CreateBookingInput!): PlayerBookingModel!
+
+  """Block a court or the whole venue for a time window."""
+  createClosure(input: CreateClosureInput!): ClosureModel!
+
+  """Create a membership plan."""
+  createMembershipPlan(input: CreateMembershipPlanInput!): MembershipPlanModel!
+
+  """Create a venue offer / promo code."""
+  createOffer(input: CreateOfferInput!): OfferModel!
+
+  """Subscribe a customer to a plan (records the first payment)."""
+  createSubscription(input: CreateSubscriptionInput!): SubscriptionModel!
+
+  """
   Get a presigned URL to upload one file (avatar, venue image/document, etc.) directly to S3.
   """
   createUploadUrl(input: CreateUploadUrlInput!): PresignedUpload!
 
   """Create a walk-in / manual booking from the venue panel."""
   createVenueBooking(input: CreateVenueBookingInput!): BookingModel!
+
+  """Create (or reuse, by phone) a venue customer."""
+  createVenueCustomer(input: CreateVenueCustomerInput!): VenueCustomerModel!
+
+  """Decline (cancel) a pending online booking."""
+  declineVenueBooking(input: DeclineVenueBookingInput!): BookingModel!
+
+  """Remove a closure / time block."""
+  deleteClosure(closureId: ID!, venueId: ID!): ClosureModel!
+
+  """Delete a membership plan."""
+  deleteMembershipPlan(planId: ID!, venueId: ID!): MembershipPlanModel!
+
+  """Delete a venue offer."""
+  deleteVenueOffer(offerId: ID!, venueId: ID!): OfferModel!
 
   """
   Email + password login. Used by admin / venue-management web panels. Mobile users use OTP.
@@ -1065,6 +1433,9 @@ type Mutation {
   """Update a booking’s payment state (paid / pending / partial)."""
   recordVenueBookingPayment(input: RecordBookingPaymentInput!): BookingModel!
 
+  """Renew a subscription (extends the window + records a payment)."""
+  renewSubscription(input: RenewSubscriptionInput!): SubscriptionModel!
+
   """Send an OTP and ensure the ORGANIZER role for this phone."""
   requestOrganizerOtp(input: RequestOtpInput!): OtpRequestResult!
 
@@ -1075,6 +1446,9 @@ type Mutation {
 
   """Send an OTP and ensure the VENUE (owner) role for this phone."""
   requestVenueOtp(input: RequestOtpInput!): OtpRequestResult!
+
+  """Pause, resume, cancel or expire a subscription."""
+  setSubscriptionStatus(input: SetSubscriptionStatusInput!): SubscriptionModel!
 
   """
   Check in / complete / no-show / cancel a booking (writes a status event).
@@ -1096,8 +1470,19 @@ type Mutation {
   """
   submitVenue(input: SubmitVenueInput!): VenueModel!
 
+  """Update / activate / deactivate a membership plan."""
+  updateMembershipPlan(input: UpdateMembershipPlanInput!): MembershipPlanModel!
+
+  """Update / activate / deactivate an offer."""
+  updateOffer(input: UpdateOfferInput!): OfferModel!
+
   """Update the current user profile (name / email / avatar)."""
   updateProfile(input: UpdateProfileInput!): User!
+
+  """
+  Edit a pending booking — reschedule (court/time/duration) and/or its customer.
+  """
+  updateVenueBooking(input: UpdateVenueBookingInput!): BookingModel!
 
   """
   Update editable venue profile fields. Requires the venue:edit permission.
@@ -1106,6 +1491,64 @@ type Mutation {
 
   """Verify an OTP and return an access token."""
   verifyOtp(input: VerifyOtpInput!): AuthPayload!
+}
+
+input MyBookingsInput {
+  pagination: PaginationInput! = {page: 1, pageSize: 20}
+}
+
+"""Who a loyalty offer applies to: ALL, INDIVIDUAL or TEAM."""
+enum OfferAudience {
+  ALL
+  INDIVIDUAL
+  TEAM
+}
+
+"""How an offer reduces a booking subtotal: PERCENT, FLAT or FREE_GAME."""
+enum OfferDiscountType {
+  FLAT
+  FREE_GAME
+  PERCENT
+}
+
+"""A venue discount / promo code, or a loyalty free-game reward."""
+type OfferModel {
+  audience: OfferAudience!
+
+  """Promo code (upper-cased); null = always-listed offer."""
+  code: String
+  createdAt: DateTime!
+  description: String
+  discountType: OfferDiscountType!
+
+  """Percent (0–100) for PERCENT, or a flat amount for FLAT."""
+  discountValue: Float!
+
+  """For EVERY_NTH: free game every N games."""
+  everyGames: Int
+  id: ID!
+  isActive: Boolean!
+
+  """Cap on a PERCENT discount."""
+  maxDiscount: Float
+
+  """Minimum booking subtotal to qualify."""
+  minSubtotal: Float!
+  title: String!
+  trigger: OfferTrigger!
+  usageCount: Int!
+  usageLimit: Int
+  validFrom: DateTime!
+  validUntil: DateTime!
+  venueId: ID!
+}
+
+"""
+What triggers an offer: PROMO_CODE (code entry) or EVERY_NTH (loyalty reward).
+"""
+enum OfferTrigger {
+  EVERY_NTH
+  PROMO_CODE
 }
 
 type OrganizerVerificationRequestModel {
@@ -1188,13 +1631,33 @@ type PaginatedAdminVenues {
   pageInfo: PageInfo!
 }
 
+type PaginatedOffers {
+  items: [OfferModel!]!
+  pageInfo: PageInfo!
+}
+
 type PaginatedOrganizerVerificationRequests {
   items: [OrganizerVerificationRequestModel!]!
   pageInfo: PageInfo!
 }
 
+type PaginatedPlayerBookings {
+  items: [PlayerBookingModel!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedSubscriptions {
+  items: [SubscriptionModel!]!
+  pageInfo: PageInfo!
+}
+
 type PaginatedVenueVerificationRequests {
   items: [VenueVerificationRequestModel!]!
+  pageInfo: PageInfo!
+}
+
+type PaginatedVenues {
+  items: [VenueCard!]!
   pageInfo: PageInfo!
 }
 
@@ -1263,6 +1726,22 @@ type PlatformSettings {
   updatedBy: AdminUser
 }
 
+"""A player's own court booking (player-panel view)."""
+type PlayerBookingModel {
+  courtId: ID!
+  courtName: String!
+  createdAt: DateTime!
+  durationMinutes: Int!
+  endAt: DateTime!
+  id: ID!
+  paymentStatus: BookingPaymentStatus!
+  sport: SportStub!
+  startAt: DateTime!
+  status: BookingStatus!
+  total: Float!
+  venue: BookingVenueStub!
+}
+
 type PopularCityItem {
   bookings: Int!
   city: String!
@@ -1298,6 +1777,17 @@ type PresignedUpload {
   Presigned URL to PUT the file to. Send the same Content-Type header used to request it.
   """
   uploadUrl: String!
+}
+
+"""A bookable court shown in the player marketplace."""
+type PublicCourt {
+  features: [String!]!
+  id: ID!
+  imageUrls: [String!]!
+  name: String!
+  pricePerHour: Float!
+  slotMinutes: Int!
+  sport: SportStub!
 }
 
 type Query {
@@ -1400,6 +1890,12 @@ type Query {
   """Single venue-verification submission with submitted info + reviewer."""
   adminVenueVerificationRequest(id: ID!): VenueVerificationRequestModel!
 
+  """Currently-redeemable offers for a venue (player view)."""
+  availableOffers(venueId: ID!): [OfferModel!]!
+
+  """Bookable slots for a court on a venue-local day (booked/past flagged)."""
+  courtSlots(input: CourtSlotsInput!): CourtSlots!
+
   """Returns the currently authenticated user."""
   me: User!
 
@@ -1407,6 +1903,9 @@ type Query {
   Resolve a stored object key into a fresh presigned download URL (e.g. to refresh an expired one).
   """
   mediaUrl(key: String!): String
+
+  """The signed-in player's bookings, most recent first."""
+  myBookings(input: MyBookingsInput!): PaginatedPlayerBookings!
 
   """A single venue the signed-in user is a member of."""
   myVenue(venueId: ID!): VenueModel!
@@ -1422,6 +1921,9 @@ type Query {
   """Active sports in the platform catalogue, ordered for display."""
   sports: [SportModel!]!
 
+  """Public venue detail with its courts."""
+  venue(venueId: ID!): VenueDetail!
+
   """A single booking by id."""
   venueBooking(bookingId: ID!, venueId: ID!): BookingModel!
 
@@ -1432,6 +1934,43 @@ type Query {
   Bookings for a venue, filtered by scope (today/upcoming) or a specific date.
   """
   venueBookings(input: ListVenueBookingsInput!): [BookingModel!]!
+
+  """Closures / time blocks for a venue."""
+  venueClosures(input: ListClosuresInput!): [ClosureModel!]!
+
+  """A single venue customer."""
+  venueCustomer(customerId: ID!, venueId: ID!): VenueCustomerModel!
+
+  """A customer's bookings (most recent first), for the detail history."""
+  venueCustomerBookings(customerId: ID!, venueId: ID!): [BookingModel!]!
+
+  """Search/list a venue's customers (people and teams) with loyalty."""
+  venueCustomers(input: ListVenueCustomersInput!): [VenueCustomerModel!]!
+
+  """
+  A subject's loyalty progress toward a free game (by customer or phone).
+  """
+  venueLoyaltyStatus(input: LoyaltyStatusInput!): LoyaltyStatusModel!
+
+  """A venue's membership plans."""
+  venueMembershipPlans(input: ListMembershipPlansInput!): [MembershipPlanModel!]!
+
+  """Venue membership KPIs (active, expiring, revenue, renewal rate)."""
+  venueMembershipStats(venueId: ID!): MembershipStatsModel!
+
+  """All offers for a venue (management view), paginated."""
+  venueOffers(input: ListVenueOffersInput!): PaginatedOffers!
+
+  """A single subscription with its payment history."""
+  venueSubscription(subscriptionId: ID!, venueId: ID!): SubscriptionModel!
+
+  """
+  A venue's subscriptions (excludes CANCELLED unless filtered), paginated.
+  """
+  venueSubscriptions(input: ListSubscriptionsInput!): PaginatedSubscriptions!
+
+  """Browse approved venues (player marketplace), filtered + paginated."""
+  venues(input: BrowseVenuesInput!): PaginatedVenues!
 
   """Validate the token before showing the password-setup form."""
   verifyVenueInvitation(token: String!): InvitationVerification!
@@ -1500,6 +2039,13 @@ input RejectVenueVerificationInput {
   requestId: ID!
 }
 
+input RenewSubscriptionInput {
+  amountPaid: Float
+  paymentMethod: PaymentProvider
+  subscriptionId: ID!
+  venueId: ID!
+}
+
 input RequestOtpInput {
   """Optional password to set on first sign-up (min 8)."""
   password: String
@@ -1523,6 +2069,12 @@ input SetBookingStatusInput {
   bookingId: ID!
   note: String
   status: BookingStatusAction!
+  venueId: ID!
+}
+
+input SetSubscriptionStatusInput {
+  status: SubscriptionStatus!
+  subscriptionId: ID!
   venueId: ID!
 }
 
@@ -1579,6 +2131,9 @@ type SportModel {
   iconUrl: String
   id: ID!
   name: String!
+
+  """Allowed booking slot lengths (minutes) for this sport."""
+  slotDurations: [Int!]!
   slug: String!
 }
 
@@ -1608,6 +2163,60 @@ input SubmitVenueInput {
   openTime: String
   services: [VenueServiceInput!]!
   verification: VenueVerificationInput
+}
+
+"""A customer's subscription to a plan."""
+type SubscriptionModel {
+  courtId: ID!
+  courtName: String!
+  createdAt: DateTime!
+  customerId: ID!
+  customerName: String!
+  customerPhone: String
+  daysOfWeek: [String!]!
+  duration: MembershipDuration!
+  expiresAt: DateTime!
+
+  """ACTIVE and within 7 days of expiry."""
+  expiringSoon: Boolean!
+  id: ID!
+
+  """Payment + renewal history."""
+  payments: [SubscriptionPaymentModel!]!
+  planId: ID!
+  planName: String!
+  price: Float!
+
+  """Session length in minutes."""
+  sessionMinutes: Int!
+
+  """The member's daily start time ("HH:mm")."""
+  slotStart: String!
+  sports: [String!]!
+  startedAt: DateTime!
+  status: SubscriptionStatus!
+  venueId: ID!
+}
+
+"""A payment against a subscription (purchase or renewal)."""
+type SubscriptionPaymentModel {
+  amount: Float!
+  createdAt: DateTime!
+  id: ID!
+  method: PaymentProvider
+  periodDays: Int
+  status: BookingPaymentStatus!
+}
+
+"""
+A subscription's lifecycle: ACTIVE -> (PAUSED) -> EXPIRED, with CANCELLED as a terminal sink.
+"""
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAUSED
+  SCHEDULED
 }
 
 input SuspendTournamentInput {
@@ -1660,6 +2269,40 @@ input UpdateDisputeStatusInput {
   status: DisputeStatus!
 }
 
+input UpdateMembershipPlanInput {
+  daysOfWeek: [String!]
+  description: String
+  duration: MembershipDuration
+  highlight: String
+  isActive: Boolean
+  name: String
+  planId: ID!
+  price: Float
+  sessionMinutes: Int
+  sports: [String!]
+  validityDays: Int
+  venueId: ID!
+  windows: [String!]
+}
+
+input UpdateOfferInput {
+  audience: OfferAudience
+  description: String
+  discountType: OfferDiscountType
+  discountValue: Float
+  everyGames: Int
+  isActive: Boolean
+  maxDiscount: Float
+  minSubtotal: Float
+  offerId: ID!
+  title: String
+  trigger: OfferTrigger
+  usageLimit: Int
+  validFrom: DateTime
+  validUntil: DateTime
+  venueId: ID!
+}
+
 input UpdatePlatformSettingsInput {
   bookingServiceFee: Float
   cancellationWindowHours: Int
@@ -1690,6 +2333,9 @@ input UpdateSportInput {
   id: ID!
   isActive: Boolean
   name: String
+
+  """Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120]."""
+  slotDurations: [Int!]
   slug: String
 }
 
@@ -1708,6 +2354,19 @@ input UpdateTournamentVisibilityInput {
 input UpdateUserRoleInput {
   role: UserRole!
   userId: ID!
+}
+
+input UpdateVenueBookingInput {
+  bookingId: ID!
+  courtId: ID
+  customerId: ID
+  customerName: String
+  customerPhone: String
+  durationMinutes: Int
+
+  """New start time (ISO 8601)."""
+  startAt: String
+  venueId: ID!
 }
 
 input UpdateVenueProfileInput {
@@ -1783,6 +2442,23 @@ type VenueBookingSummary {
   revenueToday: Float!
 }
 
+"""A venue as shown in the player marketplace list."""
+type VenueCard {
+  address: String
+  city: String
+  closeTime: String!
+  coverImageUrl: String
+  id: ID!
+  latitude: Float
+  longitude: Float
+  name: String!
+  openTime: String!
+
+  """Lowest active court price/hour."""
+  priceFrom: Float
+  sports: [SportStub!]!
+}
+
 """A bookable surface (court / ground / pitch) within a venue."""
 type VenueCourt {
   description: String
@@ -1794,6 +2470,48 @@ type VenueCourt {
   pricePerHour: Float!
   slotMinutes: Int!
   sport: SportStub!
+}
+
+"""A single court: its name, slot length and price."""
+input VenueCourtInput {
+  """Court name. Defaults to the sport name (+ index)."""
+  name: String
+  pricePerHour: Float!
+  slotMinutes: Int! = 60
+}
+
+"""A venue's customer (person or team) — loyalty is keyed by this id."""
+type VenueCustomerModel {
+  createdAt: DateTime!
+
+  """A loyalty free game is available to redeem now."""
+  freeGameReady: Boolean!
+
+  """Completed games (drives loyalty)."""
+  gamesPlayed: Int!
+  id: ID!
+  name: String!
+  notes: String
+  phone: String
+}
+
+"""Public venue detail with its bookable courts."""
+type VenueDetail {
+  address: String
+  amenities: [String!]!
+  city: String
+  closeTime: String!
+  contactPhone: String
+  courts: [PublicCourt!]!
+  coverImageUrl: String
+  description: String
+  id: ID!
+  imageUrls: [String!]!
+  latitude: Float
+  longitude: Float
+  name: String!
+  openTime: String!
+  sports: [SportStub!]!
 }
 
 """Admin-facing view of a pending / accepted venue invitation."""
@@ -1860,10 +2578,19 @@ type VenueModel {
 
 """A sport the venue offers, with its courts, slot length and price."""
 input VenueServiceInput {
-  """Number of identical courts to create."""
+  """Legacy: number of identical courts to create."""
   courtCount: Int! = 1
+
+  """
+  Per-court detail; overrides courtCount/slotMinutes/pricePerHour when set.
+  """
+  courts: [VenueCourtInput!]
   features: [String!]! = []
-  pricePerHour: Float!
+
+  """Legacy: per-hour price when courts[] is omitted."""
+  pricePerHour: Float
+
+  """Legacy: slot length when courts[] is omitted."""
   slotMinutes: Int! = 60
 
   """Sport slug, e.g. "futsal" (matches Sport.slug)."""

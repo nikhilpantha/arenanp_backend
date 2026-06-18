@@ -90,6 +90,17 @@ model Booking {
   statusEvents   BookingStatusEvent[]
   refundRequests RefundRequest[]
   disputes       Dispute[]
+  /// Add-on services the customer used, captured at completion (reflected in total).
+  extras         BookingExtra[]
+
+  /// The offer redeemed on this booking, if any (reflected in discountAmount).
+  offerId String?
+  offer   Offer?  @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  /// The venue customer this booking is for (loyalty is keyed by this id). Null for
+  /// online player bookings (which carry `userId`) and legacy rows.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -101,7 +112,35 @@ model Booking {
   @@index([startAt])
   @@index([venueId, startAt])
   @@index([customerPhone])
+  @@index([offerId])
+  @@index([venueId, customerPhone, status])
+  @@index([customerId])
+  @@index([customerId, status])
   @@map("bookings")
+}
+
+/// A venue's customer — a person or a team the front desk books under. One unified
+/// record (teams are just customers with a team name). Created/searched by venue
+/// staff; loyalty is keyed by this id. Completed games are derived from bookings.
+model Customer {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  name  String
+  phone String?
+  notes String?
+
+  bookings      Booking[]
+  subscriptions Subscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // A phone uniquely identifies a customer within a venue (multiple NULLs allowed).
+  @@unique([venueId, phone])
+  @@index([venueId])
+  @@map("customers")
 }
 
 /// Append-only timeline entry for a Booking. Created by the service layer on
@@ -123,4 +162,20 @@ model BookingStatusEvent {
   @@index([bookingId])
   @@index([createdAt])
   @@map("booking_status_events")
+}
+
+/// A single add-on service (e.g. "Bib rental") charged on a booking. Captured at
+/// completion from the venue's additional services or a one-off custom line item.
+model BookingExtra {
+  id        String  @id @default(cuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  name  String
+  price Decimal @default(0) @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
+  @@map("booking_extras")
 }

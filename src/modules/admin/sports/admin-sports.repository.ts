@@ -34,6 +34,7 @@ export class AdminSportsRepository {
     iconUrl?: string | null;
     description?: string | null;
     features: string[];
+    slotDurations: number[];
     displayOrder: number;
     isActive: boolean;
     createdById: string;
@@ -45,6 +46,7 @@ export class AdminSportsRepository {
         iconUrl: args.iconUrl ?? null,
         description: args.description ?? null,
         features: args.features,
+        slotDurations: args.slotDurations,
         displayOrder: args.displayOrder,
         isActive: args.isActive,
         createdById: args.createdById,

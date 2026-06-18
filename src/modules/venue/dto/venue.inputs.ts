@@ -32,16 +32,13 @@ export class AdditionalServiceInput {
   price?: number;
 }
 
-@InputType({ description: 'A sport the venue offers, with its courts, slot length and price.' })
-export class VenueServiceInput {
-  @Field({ description: 'Sport slug, e.g. "futsal" (matches Sport.slug).' })
+@InputType({ description: 'A single court: its name, slot length and price.' })
+export class VenueCourtInput {
+  @Field({ nullable: true, description: 'Court name. Defaults to the sport name (+ index).' })
+  @IsOptional()
   @IsString()
-  sportSlug!: string;
-
-  @Field(() => Int, { defaultValue: 1, description: 'Number of identical courts to create.' })
-  @IsNumber()
-  @Min(1)
-  courtCount: number = 1;
+  @MaxLength(80)
+  name?: string;
 
   @Field(() => Int, { defaultValue: 60 })
   @IsNumber()
@@ -52,6 +49,52 @@ export class VenueServiceInput {
   @IsNumber()
   @Min(1)
   pricePerHour!: number;
+}
+
+@InputType({ description: 'A sport the venue offers, with its courts, slot length and price.' })
+export class VenueServiceInput {
+  @Field({ description: 'Sport slug, e.g. "futsal" (matches Sport.slug).' })
+  @IsString()
+  sportSlug!: string;
+
+  /**
+   * Per-court detail (name + slot + price). When provided this is authoritative and the
+   * legacy `courtCount`/`slotMinutes`/`pricePerHour` fields below are ignored.
+   */
+  @Field(() => [VenueCourtInput], {
+    nullable: true,
+    description: 'Per-court detail; overrides courtCount/slotMinutes/pricePerHour when set.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VenueCourtInput)
+  courts?: VenueCourtInput[];
+
+  @Field(() => Int, {
+    defaultValue: 1,
+    description: 'Legacy: number of identical courts to create.',
+  })
+  @IsNumber()
+  @Min(1)
+  courtCount: number = 1;
+
+  @Field(() => Int, {
+    defaultValue: 60,
+    description: 'Legacy: slot length when courts[] is omitted.',
+  })
+  @IsNumber()
+  @Min(15)
+  slotMinutes: number = 60;
+
+  @Field(() => Float, {
+    nullable: true,
+    description: 'Legacy: per-hour price when courts[] is omitted.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  pricePerHour?: number;
 
   @Field(() => [String], { defaultValue: [] })
   @IsArray()
