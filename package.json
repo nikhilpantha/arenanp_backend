@@ -84,6 +84,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "overrides": {
+    "multer": "^2.2.0",
     "ws": "^8.20.1"
   },
   "lint-staged": {
