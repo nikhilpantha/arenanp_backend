@@ -50,6 +50,25 @@ const TERMINAL_STATUSES = new Set<BookingStatus>([
   BookingStatus.NO_SHOW,
 ]);
 
+/** True for a Postgres exclusion-constraint violation from `bookings_no_overlap` (a race). */
+function isOverlapViolation(e: unknown): boolean {
+  return e instanceof Error && /bookings_no_overlap|exclusion constraint/i.test(e.message);
+}
+
+/**
+ * Reject a booking whose Nepal-local window crosses midnight. The whole model assumes
+ * same-day windows (the player path enforces it via open/close hours); this closes the
+ * gap on the venue path, where a midnight-crossing booking's post-midnight tail would
+ * otherwise dodge the next-day membership-slot check in assertCourtAvailable.
+ */
+function assertSameNepalDay(startAt: Date, durationMinutes: number): void {
+  if (utcToNepalMinutesOfDay(startAt) + durationMinutes > 24 * 60) {
+    throw new BadRequestException(
+      'A booking can’t span midnight — please split it into two separate bookings.',
+    );
+  }
+}
+
 /** UTC day window [start, nextDay) for a `Date`. */
 function dayBounds(d: Date): { gte: Date; lt: Date } {
   const gte = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -129,8 +148,12 @@ export class BookingRepository {
       startAt: Date;
       endAt: Date;
       excludeBookingId?: string;
+      /** Player-facing path: use a neutral message that never leaks another customer's name. */
+      generic?: boolean;
     },
   ): Promise<void> {
+    const TAKEN = 'That slot is no longer available.';
+
     // 1) Overlapping booking on the same court (ignoring cancelled ones).
     const booking = await tx.booking.findFirst({
       where: {
@@ -143,6 +166,7 @@ export class BookingRepository {
       select: { startAt: true, endAt: true, customerName: true },
     });
     if (booking) {
+      if (opts.generic) throw new ConflictException(TAKEN);
       const who = booking.customerName ? ` (${booking.customerName})` : '';
       throw new ConflictException(
         `This court is already booked ${nepalClockRange(booking.startAt, booking.endAt)}${who}. Please pick a different time or court.`,
@@ -158,8 +182,16 @@ export class BookingRepository {
     const subs = await tx.subscription.findMany({
       where: {
         courtId: opts.courtId,
+        // PENDING (awaiting venue approval) still holds the slot — matches the
+        // subscriptions module's own slotConflict/takenSlotStarts — so a one-off
+        // booking can't be confirmed onto a slot a member has requested.
         status: {
-          in: [SubscriptionStatus.SCHEDULED, SubscriptionStatus.ACTIVE, SubscriptionStatus.PAUSED],
+          in: [
+            SubscriptionStatus.PENDING,
+            SubscriptionStatus.SCHEDULED,
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.PAUSED,
+          ],
         },
         startedAt: { lte: opts.startAt },
         expiresAt: { gte: opts.startAt },
@@ -175,6 +207,7 @@ export class BookingRepository {
       const subStart = parseHHmmToMinutes(s.slotStart);
       const subEnd = subStart + s.plan.sessionMinutes;
       if (startMin < subEnd && endMin > subStart) {
+        if (opts.generic) throw new ConflictException(TAKEN);
         throw new ConflictException(
           `${s.customer.name}'s membership reserves this court on ${dayLabel(weekday)} at this time. Please pick a different time or court.`,
         );
@@ -188,7 +221,8 @@ export class BookingRepository {
       startAt: opts.startAt,
       endAt: opts.endAt,
     });
-    if (closure) throw new ConflictException(closureConflictMessage(closure));
+    if (closure)
+      throw new ConflictException(opts.generic ? TAKEN : closureConflictMessage(closure));
   }
 
   async create(
@@ -216,6 +250,7 @@ export class BookingRepository {
 
     const pricePerHour = Number(court.pricePerHour.toString());
     const startAt = new Date(input.startAt);
+    assertSameNepalDay(startAt, input.durationMinutes);
     const endAt = new Date(startAt.getTime() + input.durationMinutes * 60_000);
     const subtotal = Math.round((pricePerHour * input.durationMinutes) / 60);
     const discountAmount = isFree ? subtotal : (input.discountAmount ?? 0);
@@ -223,42 +258,51 @@ export class BookingRepository {
     const amountPaid =
       input.amountPaid ?? (input.paymentStatus === BookingPaymentStatus.PAID ? total : 0);
 
-    return this.prisma.$transaction(async (tx) => {
-      await this.assertCourtAvailable(tx, {
-        venueId: input.venueId,
-        courtId: input.courtId,
-        startAt,
-        endAt,
-      });
-      return tx.booking.create({
-        data: {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.assertCourtAvailable(tx, {
           venueId: input.venueId,
           courtId: input.courtId,
-          createdById,
-          customerName: input.customerName,
-          // Store the canonical phone key so loyalty counts match across bookings.
-          customerPhone: input.customerPhone ? phoneKey(input.customerPhone) : null,
-          customerType: input.customerType,
-          customerId: input.customerId ?? null,
-          source: BookingSource.WALK_IN,
           startAt,
           endAt,
-          durationMinutes: input.durationMinutes,
-          pricePerHour,
-          subtotal,
-          discountAmount,
-          total,
-          freeGame: isFree,
-          offerId: loyaltyOfferId ?? null,
-          paymentStatus: input.paymentStatus,
-          amountPaid,
-          paymentMethod: input.paymentMethod ?? null,
-          status: BookingStatus.CONFIRMED,
-          adminNotes: input.notes ?? null,
-        },
-        include: BOOKING_INCLUDES,
+        });
+        return tx.booking.create({
+          data: {
+            venueId: input.venueId,
+            courtId: input.courtId,
+            createdById,
+            customerName: input.customerName,
+            // Store the canonical phone key so loyalty counts match across bookings.
+            customerPhone: input.customerPhone ? phoneKey(input.customerPhone) : null,
+            customerType: input.customerType,
+            customerId: input.customerId ?? null,
+            source: BookingSource.WALK_IN,
+            startAt,
+            endAt,
+            durationMinutes: input.durationMinutes,
+            pricePerHour,
+            subtotal,
+            discountAmount,
+            total,
+            freeGame: isFree,
+            offerId: loyaltyOfferId ?? null,
+            paymentStatus: input.paymentStatus,
+            amountPaid,
+            paymentMethod: input.paymentMethod ?? null,
+            status: BookingStatus.CONFIRMED,
+            adminNotes: input.notes ?? null,
+          },
+          include: BOOKING_INCLUDES,
+        });
       });
-    });
+    } catch (e) {
+      if (isOverlapViolation(e)) {
+        throw new ConflictException(
+          'This court was just booked for that time. Please pick a different time or court.',
+        );
+      }
+      throw e;
+    }
   }
 
   /** Edit a still-pending booking: reschedule (court/time/duration) and/or customer. */
@@ -306,6 +350,7 @@ export class BookingRepository {
 
     const durationMinutes = input.durationMinutes ?? existing.durationMinutes;
     const startAt = input.startAt ? new Date(input.startAt) : existing.startAt;
+    assertSameNepalDay(startAt, durationMinutes);
     const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
     const subtotal = Math.round((pricePerHour * durationMinutes) / 60);
     const discountAmount = Number(existing.discountAmount.toString());
@@ -465,6 +510,7 @@ export class BookingRepository {
   /** Create an online player booking, rejecting overlaps inside the transaction. */
   async createPlayerBooking(params: {
     userId: string;
+    customerId: string;
     courtId: string;
     venueId: string;
     startAt: Date;
@@ -477,69 +523,77 @@ export class BookingRepository {
     offerId?: string | null;
     notes?: string | null;
   }): Promise<PlayerBookingWithRelations> {
-    return this.prisma.$transaction(async (tx) => {
-      const clash = await tx.booking.findFirst({
-        where: {
-          courtId: params.courtId,
-          status: { not: BookingStatus.CANCELLED },
-          startAt: { lt: params.endAt },
-          endAt: { gt: params.startAt },
-        },
-        select: { id: true },
-      });
-      if (clash) throw new ConflictException('That slot is no longer available.');
-
-      // Owner-set closure blocking this court / the whole venue (generic message: don't
-      // leak the closure reason to players).
-      const closure = await findOverlappingClosure(tx, {
-        venueId: params.venueId,
-        courtId: params.courtId,
-        startAt: params.startAt,
-        endAt: params.endAt,
-      });
-      if (closure) throw new ConflictException('That slot is no longer available.');
-
-      // Atomically claim one offer redemption, re-checking the limit inside the tx.
-      if (params.offerId) {
-        const offer = await tx.offer.findUnique({
-          where: { id: params.offerId },
-          select: { usageLimit: true, usageCount: true },
-        });
-        if (!offer) throw new BadRequestException('Offer no longer available.');
-        if (offer.usageLimit != null && offer.usageCount >= offer.usageLimit) {
-          throw new ConflictException('This offer has reached its usage limit.');
-        }
-        await tx.offer.update({
-          where: { id: params.offerId },
-          data: { usageCount: { increment: 1 } },
-        });
-      }
-
-      return tx.booking.create({
-        data: {
-          userId: params.userId,
+    // Stamp the player's name + phone onto the booking so the venue sees who booked it.
+    const user = await this.prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { fullName: true, phoneNumber: true },
+    });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Same gate as the venue paths: rejects overlapping bookings, a member's recurring
+        // subscription slot, and owner closures — with neutral player-facing messages.
+        await this.assertCourtAvailable(tx, {
           venueId: params.venueId,
           courtId: params.courtId,
-          customerType: CustomerType.INDIVIDUAL,
-          source: BookingSource.ONLINE,
           startAt: params.startAt,
           endAt: params.endAt,
-          durationMinutes: params.durationMinutes,
-          pricePerHour: params.pricePerHour,
-          subtotal: params.subtotal,
-          discountAmount: params.discountAmount,
-          total: params.total,
-          offerId: params.offerId ?? null,
-          paymentStatus: BookingPaymentStatus.PENDING,
-          status: BookingStatus.PENDING_PAYMENT,
-          adminNotes: params.notes ?? null,
-          statusEvents: {
-            create: { toStatus: BookingStatus.PENDING_PAYMENT, actorId: params.userId },
+          generic: true,
+        });
+
+        // Enforce the offer's usage limit from the REAL redemption count (non-cancelled
+        // bookings carrying this offer), inside the tx. Usage is derived, never a stored
+        // counter — so a cancellation frees a slot and a book→cancel→book loop can't burn it.
+        if (params.offerId) {
+          const offer = await tx.offer.findUnique({
+            where: { id: params.offerId },
+            select: { usageLimit: true },
+          });
+          if (!offer) throw new BadRequestException('Offer no longer available.');
+          if (offer.usageLimit != null) {
+            const used = await tx.booking.count({
+              where: { offerId: params.offerId, status: { not: BookingStatus.CANCELLED } },
+            });
+            if (used >= offer.usageLimit) {
+              throw new ConflictException('This offer has reached its usage limit.');
+            }
+          }
+        }
+
+        return tx.booking.create({
+          data: {
+            userId: params.userId,
+            customerId: params.customerId,
+            venueId: params.venueId,
+            courtId: params.courtId,
+            customerName: user?.fullName ?? null,
+            customerPhone: user?.phoneNumber ?? null,
+            customerType: CustomerType.INDIVIDUAL,
+            source: BookingSource.ONLINE,
+            startAt: params.startAt,
+            endAt: params.endAt,
+            durationMinutes: params.durationMinutes,
+            pricePerHour: params.pricePerHour,
+            subtotal: params.subtotal,
+            discountAmount: params.discountAmount,
+            total: params.total,
+            offerId: params.offerId ?? null,
+            // Single-slot court bookings confirm instantly (pay at the venue) — no owner
+            // approval. Memberships + tournament events are the request-approved flows.
+            paymentStatus: BookingPaymentStatus.PENDING,
+            status: BookingStatus.CONFIRMED,
+            adminNotes: params.notes ?? null,
+            statusEvents: {
+              create: { toStatus: BookingStatus.CONFIRMED, actorId: params.userId },
+            },
           },
-        },
-        include: PLAYER_BOOKING_INCLUDES,
+          include: PLAYER_BOOKING_INCLUDES,
+        });
       });
-    });
+    } catch (e) {
+      // Lost a race to another booking on the same slot (DB exclusion constraint).
+      if (isOverlapViolation(e)) throw new ConflictException('That slot is no longer available.');
+      throw e;
+    }
   }
 
   async listMyBookings(

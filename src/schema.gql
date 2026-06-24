@@ -520,6 +520,7 @@ type BookingModel {
   courtId: ID!
   courtName: String!
   createdAt: DateTime!
+  customerId: ID
   customerName: String
   customerPhone: String
   customerType: CustomerType!
@@ -772,6 +773,19 @@ input CreateMembershipPlanInput {
 
   """Allowed bands as "HH:mm-HH:mm" (at least one)."""
   windows: [String!]!
+}
+
+input CreateMySubscriptionInput {
+  """Court the recurring slot reserves."""
+  courtId: ID!
+  planId: ID!
+
+  """Chosen daily start time ("HH:mm"); must fit a plan band."""
+  slotStart: String!
+
+  """Subscription start date (ISO); expiry = start + plan validity."""
+  startDate: DateTime!
+  venueId: ID!
 }
 
 input CreateOfferInput {
@@ -1110,6 +1124,12 @@ input ListVenueBookingsInput {
 }
 
 input ListVenueCustomersInput {
+  """Only customers with a live membership."""
+  hasActiveMembership: Boolean
+
+  """Filter by party type."""
+  kind: CustomerType
+
   """Max rows to return (page size). Defaults to 20."""
   limit: Int
 
@@ -1118,6 +1138,9 @@ input ListVenueCustomersInput {
 
   """Case-insensitive name / phone search."""
   search: String
+
+  """Defaults to CREATED (newest)."""
+  sort: VenueCustomerSort
   venueId: ID!
 }
 
@@ -1268,7 +1291,9 @@ enum MembershipStatus {
 }
 
 type Mutation {
-  """Accept (confirm) a pending online booking."""
+  """
+  Accept (confirm) a pending online booking. Legacy: player court bookings now confirm instantly, so this only applies to remaining PENDING_PAYMENT rows.
+  """
   acceptVenueBooking(input: AcceptVenueBookingInput!): BookingModel!
 
   """
@@ -1390,7 +1415,7 @@ type Mutation {
   """
   completeVenueBooking(input: CompleteVenueBookingInput!): BookingModel!
 
-  """Book a court slot as a player. Starts PENDING until the venue accepts."""
+  """Book a court slot as a player. Confirms instantly — pay at the venue."""
   createBooking(input: CreateBookingInput!): PlayerBookingModel!
 
   """Block a court or the whole venue for a time window."""
@@ -1398,6 +1423,11 @@ type Mutation {
 
   """Create a membership plan."""
   createMembershipPlan(input: CreateMembershipPlanInput!): MembershipPlanModel!
+
+  """
+  Subscribe to a plan as a player (auto-links the player as a venue customer).
+  """
+  createMySubscription(input: CreateMySubscriptionInput!): SubscriptionModel!
 
   """Create a venue offer / promo code."""
   createOffer(input: CreateOfferInput!): OfferModel!
@@ -1416,7 +1446,9 @@ type Mutation {
   """Create (or reuse, by phone) a venue customer."""
   createVenueCustomer(input: CreateVenueCustomerInput!): VenueCustomerModel!
 
-  """Decline (cancel) a pending online booking."""
+  """
+  Decline (cancel) a pending online booking. Legacy: player court bookings now confirm instantly, so this only applies to remaining PENDING_PAYMENT rows.
+  """
   declineVenueBooking(input: DeclineVenueBookingInput!): BookingModel!
 
   """Remove a closure / time block."""
@@ -1787,6 +1819,12 @@ type PresignedUpload {
   uploadUrl: String!
 }
 
+"""An extra paid/free service a venue offers (equipment, café, …)."""
+type PublicAdditionalService {
+  name: String!
+  price: Float
+}
+
 """A bookable court shown in the player marketplace."""
 type PublicCourt {
   features: [String!]!
@@ -1904,6 +1942,9 @@ type Query {
   """Bookable slots for a court on a venue-local day (booked/past flagged)."""
   courtSlots(input: CourtSlotsInput!): CourtSlots!
 
+  """Daily slot starts ("HH:mm") already held on a court over a date range."""
+  courtTakenSlots(courtId: ID!, endDate: String!, startDate: String!): [String!]!
+
   """Returns the currently authenticated user."""
   me: User!
 
@@ -1914,6 +1955,9 @@ type Query {
 
   """The signed-in player's bookings, most recent first."""
   myBookings(input: MyBookingsInput!): PaginatedPlayerBookings!
+
+  """The signed-in player's memberships across venues."""
+  mySubscriptions: [SubscriptionModel!]!
 
   """A single venue the signed-in user is a member of."""
   myVenue(venueId: ID!): VenueModel!
@@ -1952,6 +1996,9 @@ type Query {
   """A customer's bookings (most recent first), for the detail history."""
   venueCustomerBookings(customerId: ID!, venueId: ID!): [BookingModel!]!
 
+  """A customer's memberships (most recent first), for the unified profile."""
+  venueCustomerSubscriptions(customerId: ID!, venueId: ID!): [SubscriptionModel!]!
+
   """Search/list a venue's customers (people and teams) with loyalty."""
   venueCustomers(input: ListVenueCustomersInput!): [VenueCustomerModel!]!
 
@@ -1968,6 +2015,11 @@ type Query {
 
   """All offers for a venue (management view), paginated."""
   venueOffers(input: ListVenueOffersInput!): PaginatedOffers!
+
+  """
+  A venue's active membership plans — public, for the player marketplace.
+  """
+  venuePublicPlans(venueId: ID!): [MembershipPlanModel!]!
 
   """A single subscription with its payment history."""
   venueSubscription(subscriptionId: ID!, venueId: ID!): SubscriptionModel!
@@ -2224,6 +2276,7 @@ enum SubscriptionStatus {
   CANCELLED
   EXPIRED
   PAUSED
+  PENDING
   SCHEDULED
 }
 
@@ -2498,13 +2551,30 @@ type VenueCustomerModel {
   """Completed games (drives loyalty)."""
   gamesPlayed: Int!
   id: ID!
+
+  """Party type (INDIVIDUAL | TEAM | CLUB)."""
+  kind: CustomerType!
+
+  """Most recent booking start (last visit)."""
+  lastVisitAt: DateTime
   name: String!
   notes: String
   phone: String
+
+  """Lifetime amount paid across non-cancelled bookings."""
+  totalSpent: Float!
+}
+
+enum VenueCustomerSort {
+  CREATED
+  LAST_VISIT
+  NAME
+  SPEND
 }
 
 """Public venue detail with its bookable courts."""
 type VenueDetail {
+  additionalServices: [PublicAdditionalService!]!
   address: String
   amenities: [String!]!
   city: String

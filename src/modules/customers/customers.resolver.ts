@@ -5,6 +5,7 @@ import { RequireVenuePermission } from '../../common/decorators/venue-permission
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
 
 import { BookingModel } from '../booking/dto/booking.model';
+import { SubscriptionModel } from '../subscriptions/dto/subscription.model';
 
 import { CustomersService } from './customers.service';
 import { CreateVenueCustomerInput, ListVenueCustomersInput } from './dto/customer.inputs';
@@ -48,6 +49,19 @@ export class CustomersResolver {
     @Args('customerId', { type: () => ID }) customerId: string,
   ): Promise<BookingModel[]> {
     return this.service.getCustomerBookings(venueId, customerId);
+  }
+
+  @Query(() => [SubscriptionModel], {
+    name: 'venueCustomerSubscriptions',
+    description: "A customer's memberships (most recent first), for the unified profile.",
+  })
+  @UseGuards(VenuePermissionGuard)
+  @RequireVenuePermission('customers:read')
+  venueCustomerSubscriptions(
+    @Args('venueId', { type: () => ID }) venueId: string,
+    @Args('customerId', { type: () => ID }) customerId: string,
+  ): Promise<SubscriptionModel[]> {
+    return this.service.getCustomerSubscriptions(venueId, customerId);
   }
 
   @Mutation(() => VenueCustomerModel, {

@@ -1,5 +1,25 @@
-import { Field, ID, InputType, Int } from '@nestjs/graphql';
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Field, ID, InputType, Int, registerEnumType } from '@nestjs/graphql';
+import { CustomerType } from '@prisma/client';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+
+/** Sort order for the venue customer directory. */
+export enum VenueCustomerSort {
+  CREATED = 'CREATED',
+  NAME = 'NAME',
+  SPEND = 'SPEND',
+  LAST_VISIT = 'LAST_VISIT',
+}
+registerEnumType(VenueCustomerSort, { name: 'VenueCustomerSort' });
 
 @InputType()
 export class ListVenueCustomersInput {
@@ -10,6 +30,21 @@ export class ListVenueCustomersInput {
   @IsString()
   @MaxLength(120)
   search?: string;
+
+  @Field(() => CustomerType, { nullable: true, description: 'Filter by party type.' })
+  @IsOptional()
+  @IsEnum(CustomerType)
+  kind?: CustomerType;
+
+  @Field({ nullable: true, description: 'Only customers with a live membership.' })
+  @IsOptional()
+  @IsBoolean()
+  hasActiveMembership?: boolean;
+
+  @Field(() => VenueCustomerSort, { nullable: true, description: 'Defaults to CREATED (newest).' })
+  @IsOptional()
+  @IsEnum(VenueCustomerSort)
+  sort?: VenueCustomerSort;
 
   @Field(() => Int, {
     nullable: true,

@@ -69,7 +69,12 @@ function num(v: Decimal): number {
   return Number(v.toString());
 }
 
-export function mapOffer(o: PrismaOffer): OfferModel {
+/**
+ * Map an offer for the client. `usageCount` is served from the REAL redemption count
+ * (non-cancelled bookings carrying the offer), passed in by the service — not the stale
+ * stored counter — so it stays accurate as bookings are cancelled. Defaults to 0.
+ */
+export function mapOffer(o: PrismaOffer, redemptions = 0): OfferModel {
   return {
     id: o.id,
     venueId: o.venueId,
@@ -87,7 +92,7 @@ export function mapOffer(o: PrismaOffer): OfferModel {
     validUntil: o.validUntil,
     isActive: o.isActive,
     usageLimit: o.usageLimit ?? undefined,
-    usageCount: o.usageCount,
+    usageCount: redemptions,
     createdAt: o.createdAt,
   };
 }

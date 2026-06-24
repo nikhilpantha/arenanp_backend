@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
+import { CustomersModule } from '../customers/customers.module';
 import { OffersModule } from '../offers/offers.module';
 
 import { BookingRepository } from './booking.repository';
@@ -15,7 +16,7 @@ import { PlayerBookingResolver } from './player-booking.resolver';
  * gated by the PLAYER capability).
  */
 @Module({
-  imports: [OffersModule],
+  imports: [OffersModule, CustomersModule],
   providers: [
     BookingResolver,
     PlayerBookingResolver,

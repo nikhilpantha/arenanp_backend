@@ -15,8 +15,9 @@ import { PaginatedPlayerBookings, PlayerBookingModel } from './dto/player-bookin
 
 /**
  * Player-side booking: browse-then-book lands here. Gated by the PLAYER capability
- * (CapabilityGuard is global, so the decorator alone enforces it). New bookings start
- * PENDING_PAYMENT and wait for the venue to accept them.
+ * (CapabilityGuard is global, so the decorator alone enforces it). A single court
+ * booking confirms instantly (pay at the venue) — no owner approval; memberships and
+ * tournament events are the request-approved flows.
  */
 @Resolver(() => PlayerBookingModel)
 export class PlayerBookingResolver {
@@ -36,7 +37,7 @@ export class PlayerBookingResolver {
 
   @Mutation(() => PlayerBookingModel, {
     name: 'createBooking',
-    description: 'Book a court slot as a player. Starts PENDING until the venue accepts.',
+    description: 'Book a court slot as a player. Confirms instantly — pay at the venue.',
   })
   @RequireCapability(CapabilityType.PLAYER)
   createBooking(

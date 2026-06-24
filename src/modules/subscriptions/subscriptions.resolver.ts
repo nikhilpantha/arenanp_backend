@@ -1,12 +1,17 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { CapabilityType } from '@prisma/client';
 
+import { RequireCapability } from '../../common/decorators/capability.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireVenuePermission } from '../../common/decorators/venue-permission.decorator';
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
+import type { AuthUser } from '../../common/types/auth-context';
 
 import { SubscriptionsService } from './subscriptions.service';
 import {
   CreateMembershipPlanInput,
+  CreateMySubscriptionInput,
   CreateSubscriptionInput,
   ListMembershipPlansInput,
   ListSubscriptionsInput,
@@ -37,6 +42,28 @@ export class SubscriptionsResolver {
     @Args('input') input: ListMembershipPlansInput,
   ): Promise<MembershipPlanModel[]> {
     return this.service.listPlans(input);
+  }
+
+  @Query(() => [MembershipPlanModel], {
+    name: 'venuePublicPlans',
+    description: "A venue's active membership plans — public, for the player marketplace.",
+  })
+  venuePublicPlans(
+    @Args('venueId', { type: () => ID }) venueId: string,
+  ): Promise<MembershipPlanModel[]> {
+    return this.service.listPlans({ venueId, activeOnly: true });
+  }
+
+  @Query(() => [String], {
+    name: 'courtTakenSlots',
+    description: 'Daily slot starts ("HH:mm") already held on a court over a date range.',
+  })
+  courtTakenSlots(
+    @Args('courtId', { type: () => ID }) courtId: string,
+    @Args('startDate') startDate: string,
+    @Args('endDate') endDate: string,
+  ): Promise<string[]> {
+    return this.service.courtTakenSlots(courtId, startDate, endDate);
   }
 
   @Mutation(() => MembershipPlanModel, {
@@ -111,6 +138,29 @@ export class SubscriptionsResolver {
   @RequireVenuePermission('memberships:manage')
   createSubscription(@Args('input') input: CreateSubscriptionInput): Promise<SubscriptionModel> {
     return this.service.createSubscription(input);
+  }
+
+  // ─── Player self-service ──────────────────────────────────────────────────────
+
+  @Mutation(() => SubscriptionModel, {
+    name: 'createMySubscription',
+    description: 'Subscribe to a plan as a player (auto-links the player as a venue customer).',
+  })
+  @RequireCapability(CapabilityType.PLAYER)
+  createMySubscription(
+    @Args('input') input: CreateMySubscriptionInput,
+    @CurrentUser() user: AuthUser,
+  ): Promise<SubscriptionModel> {
+    return this.service.createMySubscription(input, user.id);
+  }
+
+  @Query(() => [SubscriptionModel], {
+    name: 'mySubscriptions',
+    description: "The signed-in player's memberships across venues.",
+  })
+  @RequireCapability(CapabilityType.PLAYER)
+  mySubscriptions(@CurrentUser() user: AuthUser): Promise<SubscriptionModel[]> {
+    return this.service.mySubscriptions(user.id);
   }
 
   @Mutation(() => SubscriptionModel, {
