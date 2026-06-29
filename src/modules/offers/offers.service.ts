@@ -83,12 +83,20 @@ export class OffersService {
     const page = input.pagination?.page ?? 1;
     const pageSize = input.pagination?.pageSize ?? 20;
     const { items, total } = await this.repo.listVenueOffers(input, page, pageSize);
-    return { items: items.map(mapOffer), pageInfo: buildPageInfo(page, pageSize, total) };
+    const reds = await this.repo.redemptionsByOffer(items.map((o) => o.id));
+    return {
+      items: items.map((o) => mapOffer(o, reds.get(o.id) ?? 0)),
+      pageInfo: buildPageInfo(page, pageSize, total),
+    };
   }
 
   async availableOffers(venueId: string): Promise<OfferModel[]> {
     const rows = await this.repo.availableOffers(venueId);
-    return rows.map(mapOffer);
+    const reds = await this.repo.redemptionsByOffer(rows.map((o) => o.id));
+    // Hide promos that have hit their usage limit (derived from real redemptions).
+    return rows
+      .filter((o) => o.usageLimit == null || (reds.get(o.id) ?? 0) < o.usageLimit)
+      .map((o) => mapOffer(o, reds.get(o.id) ?? 0));
   }
 
   /** A subject's progress toward a free game (and whether one is claimable now). */
@@ -127,12 +135,13 @@ export class OffersService {
 
   async create(input: CreateOfferInput): Promise<OfferModel> {
     assertValidOffer(input);
-    return mapOffer(await this.repo.create(input));
+    return mapOffer(await this.repo.create(input)); // brand-new → 0 redemptions
   }
 
   async update(input: UpdateOfferInput): Promise<OfferModel> {
     assertValidOffer(input);
-    return mapOffer(await this.repo.update(input));
+    const offer = await this.repo.update(input);
+    return mapOffer(offer, await this.repo.countRedemptions(offer.id));
   }
 
   async remove(venueId: string, offerId: string): Promise<OfferModel> {
@@ -142,7 +151,8 @@ export class OffersService {
   /**
    * Validate a promo code against a booking subtotal and return the redemption.
    * Throws if the code is invalid/expired, exhausted, or the subtotal is too low.
-   * The atomic `usageCount` bump happens inside the booking transaction.
+   * Usage is the live count of non-cancelled bookings carrying the offer; the booking
+   * transaction re-checks it authoritatively (no stored counter to drift).
    */
   async resolveOfferForBooking(
     venueId: string,
@@ -151,7 +161,10 @@ export class OffersService {
   ): Promise<{ offerId: string; discount: number }> {
     const offer = await this.repo.findRedeemableByCode(venueId, code);
     if (!offer) throw new BadRequestException('Invalid or expired offer code.');
-    if (offer.usageLimit != null && offer.usageCount >= offer.usageLimit) {
+    if (
+      offer.usageLimit != null &&
+      (await this.repo.countRedemptions(offer.id)) >= offer.usageLimit
+    ) {
       throw new BadRequestException('This offer has reached its usage limit.');
     }
     const minSubtotal = Number(offer.minSubtotal.toString());

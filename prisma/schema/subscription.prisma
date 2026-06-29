@@ -15,6 +15,7 @@ enum MembershipDuration {
 /// while inside [startedAt, expiresAt]; PAUSED by staff; EXPIRED once past expiresAt;
 /// CANCELLED is a terminal sink. ("Expiring soon" is derived from expiresAt, not stored.)
 enum SubscriptionStatus {
+  PENDING
   SCHEDULED
   ACTIVE
   PAUSED

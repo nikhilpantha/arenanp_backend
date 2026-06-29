@@ -118,7 +118,9 @@ export class BookingResolver {
 
   @Mutation(() => BookingModel, {
     name: 'acceptVenueBooking',
-    description: 'Accept (confirm) a pending online booking.',
+    description:
+      'Accept (confirm) a pending online booking. Legacy: player court bookings now confirm ' +
+      'instantly, so this only applies to remaining PENDING_PAYMENT rows.',
   })
   @UseGuards(VenuePermissionGuard)
   @RequireVenuePermission('bookings:write')
@@ -131,7 +133,9 @@ export class BookingResolver {
 
   @Mutation(() => BookingModel, {
     name: 'declineVenueBooking',
-    description: 'Decline (cancel) a pending online booking.',
+    description:
+      'Decline (cancel) a pending online booking. Legacy: player court bookings now confirm ' +
+      'instantly, so this only applies to remaining PENDING_PAYMENT rows.',
   })
   @UseGuards(VenuePermissionGuard)
   @RequireVenuePermission('bookings:write')

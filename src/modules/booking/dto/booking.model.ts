@@ -30,6 +30,9 @@ export class BookingModel {
   @Field() courtName!: string;
   @Field(() => SportStub) sport!: SportStub;
 
+  /// The venue Customer this booking belongs to (null for legacy/phoneless-walk-in rows).
+  /// Lets a booking card deep-link to the unified customer profile.
+  @Field(() => ID, { nullable: true }) customerId?: string;
   @Field({ nullable: true }) customerName?: string;
   @Field({ nullable: true }) customerPhone?: string;
   @Field(() => CustomerType) customerType!: CustomerType;
@@ -75,6 +78,7 @@ export function mapBookingToGraphql(b: BookingWithRelations): BookingModel {
     courtId: b.courtId,
     courtName: b.court.name,
     sport: mapSportStub(b.court.sport),
+    customerId: b.customerId ?? undefined,
     customerName: b.customerName ?? undefined,
     customerPhone: b.customerPhone ?? undefined,
     customerType: b.customerType,

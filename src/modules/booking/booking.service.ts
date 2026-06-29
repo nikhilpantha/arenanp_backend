@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 
 import { buildPageInfo } from '../../common/dto/pagination.input';
 import { parseHHmmToMinutes, utcToNepalMinutesOfDay } from '../../common/utils/nepal-time';
+import { CustomersRepository } from '../customers/customers.repository';
 import { OffersService } from '../offers/offers.service';
 
 import { BookingRepository } from './booking.repository';
@@ -33,6 +34,7 @@ export class BookingService {
   constructor(
     private readonly repo: BookingRepository,
     private readonly offers: OffersService,
+    private readonly customers: CustomersRepository,
   ) {}
 
   async list(input: ListVenueBookingsInput): Promise<BookingModel[]> {
@@ -61,7 +63,22 @@ export class BookingService {
       const { offerId } = await this.offers.resolveLoyaltyForBooking(subject);
       loyaltyOfferId = offerId;
     }
-    return mapBookingToGraphql(await this.repo.create(input, actorId, loyaltyOfferId));
+
+    // Dedupe a walk-in by phone into one venue Customer so repeat visitors merge into a
+    // single record (loyalty + history). A phoneless walk-in stays inline on the booking.
+    let customerId = input.customerId;
+    if (!customerId && input.customerPhone) {
+      const customer = await this.customers.getOrCreateForWalkIn(input.venueId, {
+        name: input.customerName,
+        phone: input.customerPhone,
+        kind: input.customerType,
+      });
+      customerId = customer.id;
+    }
+
+    return mapBookingToGraphql(
+      await this.repo.create({ ...input, customerId }, actorId, loyaltyOfferId),
+    );
   }
 
   async update(input: UpdateVenueBookingInput): Promise<BookingModel> {
@@ -124,8 +141,13 @@ export class BookingService {
       offerId = applied.offerId;
     }
 
+    // Link the player to this venue's CRM (create/claim their Customer) so the booking
+    // shows in the venue's Customers list + accrues loyalty like a walk-in's.
+    const customer = await this.customers.getOrCreateForUser(court.venueId, userId);
+
     const row = await this.repo.createPlayerBooking({
       userId,
+      customerId: customer.id,
       courtId: court.id,
       venueId: court.venueId,
       startAt,

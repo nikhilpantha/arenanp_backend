@@ -9,6 +9,12 @@ import { Decimal } from '@prisma/client/runtime/library';
 
 import { mapSportStub, SportStub } from '../../admin/sports/dto/sport-stub.model';
 
+@ObjectType({ description: 'An extra paid/free service a venue offers (equipment, café, …).' })
+export class PublicAdditionalService {
+  @Field() name!: string;
+  @Field(() => Float, { nullable: true }) price?: number;
+}
+
 @ObjectType({ description: 'A bookable court shown in the player marketplace.' })
 export class PublicCourt {
   @Field(() => ID) id!: string;
@@ -34,6 +40,7 @@ export class VenueDetail {
   /** Stored S3 object keys; presigned by VenueDetailResolver. */
   imageUrls!: string[];
   @Field(() => [String]) amenities!: string[];
+  @Field(() => [PublicAdditionalService]) additionalServices!: PublicAdditionalService[];
   @Field(() => [SportStub]) sports!: SportStub[];
   @Field(() => [PublicCourt]) courts!: PublicCourt[];
   @Field() openTime!: string;
@@ -52,6 +59,21 @@ export type VenueForDetail = PrismaVenue & {
 
 function num(value: Decimal | null): number | undefined {
   return value == null ? undefined : Number(value.toString());
+}
+
+/** The venue's `additionalServices` JSON column → typed name/price list. */
+function parseAdditionalServices(
+  value: PrismaVenue['additionalServices'],
+): PublicAdditionalService[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (v): v is { name: string; price?: number } => !!v && typeof v === 'object' && 'name' in v,
+    )
+    .map((v) => ({
+      name: String(v.name),
+      price: typeof v.price === 'number' ? v.price : undefined,
+    }));
 }
 
 function mapPublicCourt(c: CourtWithSport): PublicCourt {
@@ -77,6 +99,7 @@ export function mapVenueDetail(v: VenueForDetail): VenueDetail {
     coverImageUrl: v.coverImageUrl ?? undefined,
     imageUrls: v.imageUrls,
     amenities: v.amenities,
+    additionalServices: parseAdditionalServices(v.additionalServices),
     sports: v.venueSports.map((vs) => mapSportStub(vs.sport)),
     courts: v.courts.map(mapPublicCourt),
     openTime: v.openTime,

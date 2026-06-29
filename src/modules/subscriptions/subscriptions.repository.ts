@@ -182,9 +182,14 @@ export class SubscriptionsRepository {
       where: {
         courtId,
         slotStart,
-        // Scheduled (not-yet-started) memberships still hold their slot.
+        // Pending requests + scheduled (not-yet-started) memberships still hold their slot.
         status: {
-          in: [SubscriptionStatus.SCHEDULED, SubscriptionStatus.ACTIVE, SubscriptionStatus.PAUSED],
+          in: [
+            SubscriptionStatus.PENDING,
+            SubscriptionStatus.SCHEDULED,
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.PAUSED,
+          ],
         },
         // Date ranges overlap when each starts on/before the other ends.
         startedAt: { lte: endDate },
@@ -192,6 +197,42 @@ export class SubscriptionsRepository {
       },
     });
     return count > 0;
+  }
+
+  /**
+   * The daily slot starts ("HH:mm") already held on a court by a live subscription
+   * (PENDING/SCHEDULED/ACTIVE/PAUSED) whose date range overlaps [startDate, endDate].
+   * Drives the player picker's availability so they can't request a taken slot.
+   */
+  async takenSlotStarts(courtId: string, startDate: Date, endDate: Date): Promise<string[]> {
+    const rows = await this.prisma.subscription.findMany({
+      where: {
+        courtId,
+        status: {
+          in: [
+            SubscriptionStatus.PENDING,
+            SubscriptionStatus.SCHEDULED,
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.PAUSED,
+          ],
+        },
+        startedAt: { lte: endDate },
+        expiresAt: { gte: startDate },
+      },
+      select: { slotStart: true },
+      distinct: ['slotStart'],
+    });
+    return rows.map((r) => r.slotStart);
+  }
+
+  /** A player's own subscriptions across venues (via their linked customers), newest first. */
+  async mySubscriptions(userId: string) {
+    return this.prisma.subscription.findMany({
+      where: { customer: { userId } },
+      orderBy: { createdAt: 'desc' },
+      include: SUBSCRIPTION_INCLUDE,
+      take: 100,
+    });
   }
 
   /** Resolve the plan, court + customer that all belong to the venue (any may be null). */
@@ -211,10 +252,13 @@ export class SubscriptionsRepository {
     slotStart: string,
     startedAt: Date,
     now: Date,
+    forceStatus?: SubscriptionStatus,
   ) {
     const amount = input.amountPaid ?? Number(plan.price.toString());
-    // A future start date means the membership is upcoming, not running yet.
-    const status = startedAt > now ? SubscriptionStatus.SCHEDULED : SubscriptionStatus.ACTIVE;
+    // A future start date means the membership is upcoming, not running yet — unless the
+    // caller forces a status (player self-subscribe creates a PENDING request to approve).
+    const status =
+      forceStatus ?? (startedAt > now ? SubscriptionStatus.SCHEDULED : SubscriptionStatus.ACTIVE);
     const created = await this.prisma.$transaction(async (tx) => {
       const sub = await tx.subscription.create({
         data: {

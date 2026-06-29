@@ -127,6 +127,16 @@ model Customer {
   venueId String
   venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
 
+  /// The app account, when this customer is a registered player (else null = walk-in).
+  /// One customer per app user per venue; a walk-in is "claimed" by setting this on
+  /// their first app booking/subscription with the same phone.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// Party type. Authoritative for the venue's customer list; bookings snapshot it into
+  /// `Booking.customerType`. A walk-in/app player is INDIVIDUAL; a clan/team is TEAM.
+  kind CustomerType @default(INDIVIDUAL)
+
   name  String
   phone String?
   notes String?
@@ -139,7 +149,11 @@ model Customer {
 
   // A phone uniquely identifies a customer within a venue (multiple NULLs allowed).
   @@unique([venueId, phone])
+  // …and so does the app user (NULLs don't collide in Postgres → walk-ins are fine).
+  @@unique([venueId, userId])
   @@index([venueId])
+  @@index([userId])
+  @@index([venueId, kind])
   @@map("customers")
 }
 

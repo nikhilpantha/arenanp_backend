@@ -166,6 +166,25 @@ export class CreateSubscriptionInput {
   paymentMethod?: PaymentProvider;
 }
 
+/** Player self-subscribe — like CreateSubscriptionInput but the customer is the player. */
+@InputType()
+export class CreateMySubscriptionInput {
+  @Field(() => ID) @IsString() venueId!: string;
+  @Field(() => ID) @IsString() planId!: string;
+  @Field(() => ID, { description: 'Court the recurring slot reserves.' })
+  @IsString()
+  courtId!: string;
+
+  @Field({ description: 'Chosen daily start time ("HH:mm"); must fit a plan band.' })
+  @IsString()
+  slotStart!: string;
+
+  @Field({ description: 'Subscription start date (ISO); expiry = start + plan validity.' })
+  @Type(() => Date)
+  @IsDate()
+  startDate!: Date;
+}
+
 @InputType()
 export class RenewSubscriptionInput {
   @Field(() => ID) @IsString() venueId!: string;

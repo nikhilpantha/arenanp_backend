@@ -47,16 +47,33 @@ export class OffersRepository {
     return { items, total };
   }
 
-  /** Player-facing: currently-redeemable offers for a venue (active, in-window, has uses left). */
+  /** Player-facing: active, in-window promo offers (exhausted ones filtered in the service). */
   availableOffers(venueId: string): Promise<Offer[]> {
     return this.prisma.offer.findMany({
       where: {
         venueId,
         trigger: OfferTrigger.PROMO_CODE,
         ...activeWindow(new Date()),
-        OR: [{ usageLimit: null }, { usageLimit: { gt: this.prisma.offer.fields.usageCount } }],
       },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Real redemptions (non-cancelled bookings carrying the offer) per offer, batched. */
+  async redemptionsByOffer(offerIds: string[]): Promise<Map<string, number>> {
+    if (offerIds.length === 0) return new Map();
+    const rows = await this.prisma.booking.groupBy({
+      by: ['offerId'],
+      where: { offerId: { in: offerIds }, status: { not: BookingStatus.CANCELLED } },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.offerId as string, r._count._all]));
+  }
+
+  /** Real redemptions of a single offer. */
+  countRedemptions(offerId: string): Promise<number> {
+    return this.prisma.booking.count({
+      where: { offerId, status: { not: BookingStatus.CANCELLED } },
     });
   }
 

@@ -1,11 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { SubscriptionStatus } from '@prisma/client';
 
 import { buildPageInfo } from '../../common/dto/pagination.input';
+import { CustomersRepository } from '../customers/customers.repository';
 
 import { assertSlotInWindows, normaliseWindows } from './slots.util';
 import { SubscriptionsRepository } from './subscriptions.repository';
 import type {
   CreateMembershipPlanInput,
+  CreateMySubscriptionInput,
   CreateSubscriptionInput,
   ListMembershipPlansInput,
   ListSubscriptionsInput,
@@ -24,7 +27,10 @@ import {
 
 @Injectable()
 export class SubscriptionsService {
-  constructor(private readonly repo: SubscriptionsRepository) {}
+  constructor(
+    private readonly repo: SubscriptionsRepository,
+    private readonly customers: CustomersRepository,
+  ) {}
 
   // ─── Plans ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +76,10 @@ export class SubscriptionsService {
     return mapSubscription(sub, now);
   }
 
-  async createSubscription(input: CreateSubscriptionInput): Promise<SubscriptionModel> {
+  async createSubscription(
+    input: CreateSubscriptionInput,
+    forceStatus?: SubscriptionStatus,
+  ): Promise<SubscriptionModel> {
     const { plan, court, customer } = await this.repo.planCourtCustomer(
       input.venueId,
       input.planId,
@@ -94,8 +103,43 @@ export class SubscriptionsService {
     }
 
     const now = new Date();
-    const sub = await this.repo.createSubscription(input, plan, slotStart, startDate, now);
+    const sub = await this.repo.createSubscription(
+      input,
+      plan,
+      slotStart,
+      startDate,
+      now,
+      forceStatus,
+    );
     return mapSubscription(sub, now);
+  }
+
+  /**
+   * A player subscribes to a plan themselves: resolve (or create) their venue customer,
+   * then run the same validation + create path. Activates directly (pay at the venue).
+   */
+  async createMySubscription(
+    input: CreateMySubscriptionInput,
+    userId: string,
+  ): Promise<SubscriptionModel> {
+    const customer = await this.customers.getOrCreateForUser(input.venueId, userId);
+    // Player self-subscribe lands as a request the venue approves (→ ACTIVE/SCHEDULED).
+    return this.createSubscription(
+      { ...input, customerId: customer.id, amountPaid: 0 },
+      SubscriptionStatus.PENDING,
+    );
+  }
+
+  /** Daily slot starts ("HH:mm") already taken on a court over a date range (public). */
+  async courtTakenSlots(courtId: string, startDate: string, endDate: string): Promise<string[]> {
+    return this.repo.takenSlotStarts(courtId, new Date(startDate), new Date(endDate));
+  }
+
+  /** The signed-in player's subscriptions (across venues), mapped for the app. */
+  async mySubscriptions(userId: string): Promise<SubscriptionModel[]> {
+    const now = new Date();
+    const items = await this.repo.mySubscriptions(userId);
+    return items.map((s) => mapSubscription(s, now));
   }
 
   async renewSubscription(input: RenewSubscriptionInput): Promise<SubscriptionModel> {

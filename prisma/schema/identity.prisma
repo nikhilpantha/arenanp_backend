@@ -93,6 +93,9 @@ model User {
   cancelledBookings   Booking[]            @relation("UserCancelledBookings")
   bookingStatusEvents BookingStatusEvent[] @relation("UserBookingStatusEvents")
 
+  // Per-venue customer records this user is linked to (one per venue they use).
+  customers Customer[]
+
   payments              Payment[]    @relation("UserPayments")
   settlementsMarkedPaid Settlement[] @relation("UserSettlementsMarkedPaid")
 
