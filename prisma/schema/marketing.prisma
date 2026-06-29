@@ -1,0 +1,33 @@
+// ─── Marketing & Growth ──────────────────────────────────────────────────────
+
+/// Waitlist entry for early access. Users can sign up before launch to be
+/// notified when Arena NP becomes available. Used for growth/analytics.
+model Waitlist {
+  id String @id @default(cuid())
+
+  email    String @unique
+  joinedAt DateTime @default(now())
+
+  /// Email verification status
+  isVerified Boolean @default(false)
+  verifiedAt DateTime?
+
+  /// Email verification token (6-digit OTP or JWT-like token)
+  verificationToken String?
+  verificationTokenExpiresAt DateTime?
+
+  /// Engagement tracking
+  notifiedAt DateTime?
+
+  /// Metadata for analytics
+  source String? /// Where they came from (e.g., "landing", "social", "referral")
+  metadata Json? /// Additional metadata (device, location, etc.)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([joinedAt])
+  @@index([verificationToken])
+  @@map("waitlist")
+}
