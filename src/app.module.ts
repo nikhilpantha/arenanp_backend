@@ -28,6 +28,8 @@ import { VenueModule } from './modules/venue/venue.module';
 import { VenueInvitationsModule } from './modules/venue-invitations/venue-invitations.module';
 import { SportsModule } from './modules/sports/sports.module';
 import { ClosuresModule } from './modules/closures/closures.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -70,6 +72,8 @@ import { HealthController } from './health.controller';
     VenueInvitationsModule,
     SportsModule,
     ClosuresModule,
+    MarketingModule,
+    AuditModule,
   ],
   controllers: [HealthController],
 })
