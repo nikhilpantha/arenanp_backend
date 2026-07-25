@@ -61,10 +61,11 @@ export class PermissionCacheService {
       return ['*'];
     }
 
-    // Fetch active permission overrides (non-expired)
+    // Fetch active permission overrides (non-deleted, non-expired)
     const overrides = await this.prisma.permissionOverride.findMany({
       where: {
         userId,
+        deletedAt: null,
         OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
       select: { permission: true, action: true },

@@ -17,7 +17,10 @@ import { PlatformStaffGuard } from '../../common/guards/platform-staff.guard';
 import { CapabilitiesModule } from '../capabilities/capabilities.module';
 import { PrismaModule } from '../../database/prisma.module';
 import { RedisModule } from '../../redis/redis.module';
+import { AuditModule } from '../audit/audit.module';
 import { PermissionCacheService } from './permission-cache.service';
+import { ResourceOwnershipService } from './resource-ownership.service';
+import { RoleGrantService } from './role-grant.service';
 
 // Force GraphQL enums to be registered before resolvers compile.
 import '../../common/enums';
@@ -27,6 +30,7 @@ import '../../common/enums';
     CapabilitiesModule,
     PrismaModule,
     RedisModule,
+    AuditModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -48,12 +52,21 @@ import '../../common/enums';
     OtpService,
     JwtStrategy,
     PermissionCacheService,
+    ResourceOwnershipService,
+    RoleGrantService,
     // Globally protect every route/resolver. Mark endpoints with @Public() to opt out.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: CapabilityGuard },
     { provide: APP_GUARD, useClass: PlatformStaffGuard },
   ],
-  exports: [AuthService, JwtModule, PassportModule, PermissionCacheService],
+  exports: [
+    AuthService,
+    JwtModule,
+    PassportModule,
+    PermissionCacheService,
+    ResourceOwnershipService,
+    RoleGrantService,
+  ],
 })
 export class AuthModule {}

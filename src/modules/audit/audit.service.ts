@@ -2,9 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
 
 export interface PermissionChangeDetails {
-  permission: string;
+  permission?: string; // For permission grants, may be empty for role grants
   expiresAt?: string;
   grantedReason?: string;
+  type?: string; // 'PERMISSION_GRANT' | 'TEMPORARY_ROLE'
+  role?: string; // For temporary role grants
+  previousExpiresAt?: string; // For revocations
   [key: string]: any;
 }
 

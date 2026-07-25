@@ -2,6 +2,9 @@
 
 enum UserRole {
   USER
+  SUPPORT_AGENT
+  MODERATOR
+  ADMIN
   SUPER_ADMIN
 }
 
@@ -45,6 +48,12 @@ enum MembershipStatus {
   SUSPENDED
 }
 
+/// Override action for platform staff permission grants/revokes.
+enum OverrideAction {
+  GRANT
+  REVOKE
+}
+
 /// Base account. Holds only auth + common fields; every role's specific data
 /// lives in its own table (player_profiles, organizer_profiles, venues).
 /// Capabilities (PLAYER / VENUE / ORGANIZER / COACH) live in `user_capabilities`.
@@ -70,6 +79,11 @@ model User {
 
   // Layer 2 — capabilities (status gates)
   capabilities UserCapability[]
+
+  // Layer 1 — platform staff permissions (overrides)
+  permissionOverrides PermissionOverride[]
+  roleGrants          StaffRoleGrant[] @relation("StaffRoleGrants")
+  roleGrantsGiven     StaffRoleGrant[] @relation("StaffRoleGranter")
 
   // Role profiles (1:1)
   playerProfile    PlayerProfile?
@@ -271,4 +285,61 @@ model VenueVerificationRequest {
   @@index([status])
   @@index([userId])
   @@map("venue_verification_requests")
+}
+
+/// Platform staff permission override (grant or revoke a permission from the role default).
+/// Used for temporary access grants (with expiresAt) or role-specific exceptions.
+model PermissionOverride {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission  String         /// e.g. "finance:read", "moderation:verify:venue"
+  action      OverrideAction /// GRANT or REVOKE
+  grantedById String         /// Who granted/revoked this permission
+  grantedAt   DateTime       @default(now())
+  expiresAt   DateTime?      /// Optional expiry for temporary grants
+  reason      String?        /// Audit: why was this granted/revoked?
+  deletedAt   DateTime?      /// Soft-delete timestamp (null = active)
+
+  @@unique([userId, permission])
+  @@index([userId, expiresAt])
+  @@index([grantedById])
+  @@index([deletedAt])
+  @@map("permission_overrides")
+}
+
+/// Time-limited role grants for temporary promotions/access.
+/// Example: Grant MODERATOR role to a SUPPORT_AGENT for 1 month.
+/// Expires automatically; must have explicit expiry (no permanent grants).
+model StaffRoleGrant {
+  id        String   @id @default(cuid())
+
+  /// User receiving the temporary role
+  userId    String
+  user      User     @relation("StaffRoleGrants", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Role being granted (e.g., MODERATOR, ADMIN)
+  role      UserRole
+
+  /// Who granted this role
+  grantedBy String
+  granterUser User   @relation("StaffRoleGranter", fields: [grantedBy], references: [id], onDelete: Restrict)
+
+  /// When the role was granted
+  grantedAt DateTime @default(now())
+
+  /// When the grant expires (MUST have expiry - no permanent grants)
+  expiresAt DateTime
+
+  /// Why the role was granted
+  reason    String?
+
+  /// Status: ACTIVE (current) | EXPIRED (past expiryAt) | REVOKED (manually revoked)
+  status    String   @default("ACTIVE")
+
+  @@unique([userId, role])
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@index([grantedBy])
+  @@map("staff_role_grants")
 }
