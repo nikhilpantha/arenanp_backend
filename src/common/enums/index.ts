@@ -14,6 +14,7 @@ import {
   OfferAudience,
   OfferDiscountType,
   OfferTrigger,
+  OverrideAction,
   PaymentProvider,
   PaymentStatus,
   RefundStatus,
@@ -29,7 +30,8 @@ import {
 
 registerEnumType(UserRole, {
   name: 'UserRole',
-  description: 'Base user role. USER for everyone, SUPER_ADMIN for platform admins.',
+  description:
+    'User role (platform-wide). USER for regular users/venue staff, or platform staff: SUPPORT_AGENT, MODERATOR, ADMIN, SUPER_ADMIN.',
 });
 
 registerEnumType(CapabilityType, {
@@ -165,6 +167,12 @@ registerEnumType(SubscriptionStatus, {
     "A subscription's lifecycle: ACTIVE -> (PAUSED) -> EXPIRED, with CANCELLED as a terminal sink.",
 });
 
+registerEnumType(OverrideAction, {
+  name: 'OverrideAction',
+  description:
+    'Platform staff permission override action: GRANT (add permission) or REVOKE (remove permission).',
+});
+
 export {
   BookingPaymentStatus,
   BookingSource,
@@ -180,6 +188,7 @@ export {
   OfferAudience,
   OfferDiscountType,
   OfferTrigger,
+  OverrideAction,
   PaymentProvider,
   PaymentStatus,
   RefundStatus,

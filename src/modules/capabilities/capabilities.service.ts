@@ -42,4 +42,36 @@ export class CapabilitiesService {
       create: { userId, type, status },
     });
   }
+
+  /**
+   * Upsert capability status and bump tokenVersion if changing to APPROVED or SUSPENDED.
+   * Use this when you want to force re-login on capability state changes.
+   * Pass `db` to run inside a transaction.
+   */
+  async setStatusWithTokenRevoke(
+    userId: string,
+    type: CapabilityType,
+    status: CapabilityStatus,
+    db: Db = this.prisma,
+  ) {
+    const shouldBumpToken =
+      status === CapabilityStatus.APPROVED || status === CapabilityStatus.SUSPENDED;
+
+    // First, update the capability
+    await this.setStatus(userId, type, status, db);
+
+    // Then bump tokenVersion if needed
+    if (shouldBumpToken) {
+      const isPrismaService = db instanceof PrismaService;
+      if (isPrismaService) {
+        // Safe to call update directly
+        await (db as PrismaService).user.update({
+          where: { id: userId },
+          data: { tokenVersion: { increment: 1 } },
+        });
+      }
+      // If inside a transaction, the caller is responsible for bumping tokenVersion
+      // (can't call methods on TransactionClient during the transaction)
+    }
+  }
 }

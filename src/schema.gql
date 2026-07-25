@@ -647,6 +647,10 @@ enum CapabilityType {
   VENUE
 }
 
+input ChangeStaffRoleInput {
+  newRole: UserRole!
+}
+
 """A venue-owner block on bookings — one court or the whole venue."""
 type ClosureModel {
   """Blocked court; null = whole venue."""
@@ -832,6 +836,11 @@ input CreateSportInput {
   slug: String
 }
 
+input CreateStaffInput {
+  phoneNumber: String!
+  platformStaffRole: UserRole!
+}
+
 input CreateSubscriptionInput {
   """Amount collected now; defaults to price."""
   amountPaid: Float
@@ -929,6 +938,13 @@ enum DisputeStatus {
   OPEN
   REJECTED
   RESOLVED
+}
+
+input GrantPermissionOverrideInput {
+  action: OverrideAction!
+  expiresAt: DateTime
+  permission: String!
+  reason: String
 }
 
 """Pre-form check the public setup page calls to validate the token."""
@@ -1089,6 +1105,20 @@ input ListOrganizerVerificationRequestsInput {
 
   """Filter by request status. Defaults to all when omitted."""
   status: CapabilityStatus
+}
+
+input ListStaffInput {
+  isActive: Boolean
+  limit: Int
+  offset: Int
+  role: UserRole
+}
+
+type ListStaffOutput {
+  items: [StaffMember!]!
+  limit: Int!
+  offset: Int!
+  total: Int!
 }
 
 input ListSubscriptionsInput {
@@ -1409,6 +1439,7 @@ type Mutation {
   Cancel one of your own bookings (only before it reaches a terminal state).
   """
   cancelMyBooking(input: CancelMyBookingInput!): PlayerBookingModel!
+  changeStaffRole(input: ChangeStaffRoleInput!, userId: String!): StaffMember!
 
   """
   Complete a booking with add-on extras and final payment (writes a status event).
@@ -1431,6 +1462,7 @@ type Mutation {
 
   """Create a venue offer / promo code."""
   createOffer(input: CreateOfferInput!): OfferModel!
+  createStaff(input: CreateStaffInput!): StaffMember!
 
   """Subscribe a customer to a plan (records the first payment)."""
   createSubscription(input: CreateSubscriptionInput!): SubscriptionModel!
@@ -1459,6 +1491,7 @@ type Mutation {
 
   """Delete a venue offer."""
   deleteVenueOffer(offerId: ID!, venueId: ID!): OfferModel!
+  grantPermissionOverride(input: GrantPermissionOverrideInput!, userId: String!): String!
 
   """
   Email + password login. Used by admin / venue-management web panels. Mobile users use OTP.
@@ -1486,6 +1519,7 @@ type Mutation {
 
   """Send an OTP and ensure the VENUE (owner) role for this phone."""
   requestVenueOtp(input: RequestOtpInput!): OtpRequestResult!
+  revokePermissionOverride(permission: String!, userId: String!): String!
 
   """Pause, resume, cancel or expire a subscription."""
   setSubscriptionStatus(input: SetSubscriptionStatusInput!): SubscriptionModel!
@@ -1509,6 +1543,8 @@ type Mutation {
   Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. The VENUE capability is granted at signup and untouched here.
   """
   submitVenue(input: SubmitVenueInput!): VenueModel!
+  suspendStaff(userId: String!): String!
+  unsuspendStaff(userId: String!): String!
 
   """Update / activate / deactivate a membership plan."""
   updateMembershipPlan(input: UpdateMembershipPlanInput!): MembershipPlanModel!
@@ -1624,6 +1660,14 @@ type OtpRequestResult {
   True when this request granted a capability the account did not have yet.
   """
   roleAdded: Boolean
+}
+
+"""
+Platform staff permission override action: GRANT (add permission) or REVOKE (remove permission).
+"""
+enum OverrideAction {
+  GRANT
+  REVOKE
 }
 
 """Pagination metadata returned alongside list payloads."""
@@ -1944,6 +1988,8 @@ type Query {
 
   """Daily slot starts ("HH:mm") already held on a court over a date range."""
   courtTakenSlots(courtId: ID!, endDate: String!, startDate: String!): [String!]!
+  getStaffPermissions(userId: String!): StaffPermissions!
+  listStaff(input: ListStaffInput): ListStaffOutput!
 
   """Returns the currently authenticated user."""
   me: User!
@@ -2205,6 +2251,30 @@ type SportStub {
   id: ID!
   name: String!
   slug: String!
+}
+
+type StaffMember {
+  createdAt: DateTime!
+  email: String
+  fullName: String
+  id: String!
+  isActive: Boolean!
+  overrideCount: Int!
+  phoneNumber: String!
+  role: UserRole!
+}
+
+type StaffPermissionOverride {
+  action: OverrideAction!
+  expiresAt: DateTime
+  permission: String!
+  reason: String
+}
+
+type StaffPermissions {
+  baseRole: UserRole!
+  overrides: [StaffPermissionOverride!]!
+  permissions: [String!]!
 }
 
 input SubmitVenueInput {
@@ -2490,9 +2560,14 @@ type UserCapabilityModel {
   type: CapabilityType!
 }
 
-"""Base user role. USER for everyone, SUPER_ADMIN for platform admins."""
+"""
+User role (platform-wide). USER for regular users/venue staff, or platform staff: SUPPORT_AGENT, MODERATOR, ADMIN, SUPER_ADMIN.
+"""
 enum UserRole {
+  ADMIN
+  MODERATOR
   SUPER_ADMIN
+  SUPPORT_AGENT
   USER
 }
 

@@ -38,6 +38,8 @@ import { AdminSportsResolver } from './sports/admin-sports.resolver';
 import { AdminSportsService } from './sports/admin-sports.service';
 import { SportStubResolver } from './sports/sport-stub.resolver';
 import { AdminStorageResolver } from './storage/admin-storage.resolver';
+import { StaffService } from './staff/staff.service';
+import { StaffResolver } from './staff/staff.resolver';
 
 /**
  * Super-admin module.
@@ -88,6 +90,8 @@ import { AdminStorageResolver } from './storage/admin-storage.resolver';
     AdminSportsRepository,
     SportStubResolver,
     AdminStorageResolver,
+    StaffResolver,
+    StaffService,
   ],
 })
 export class AdminModule {}

@@ -69,7 +69,7 @@ export class CustomersResolver {
     description: 'Create (or reuse, by phone) a venue customer.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('customers:read')
+  @RequireVenuePermission('bookings:write')
   createVenueCustomer(@Args('input') input: CreateVenueCustomerInput): Promise<VenueCustomerModel> {
     return this.service.create(input);
   }

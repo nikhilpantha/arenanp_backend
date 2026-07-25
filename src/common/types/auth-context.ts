@@ -36,3 +36,8 @@ export interface JwtPayload {
 export function hasApprovedCapability(user: AuthUser, type: CapabilityType): boolean {
   return user.capabilities.some((c) => c.type === type && c.status === 'APPROVED');
 }
+
+/** True when the user is a platform staff member (not a regular USER). */
+export function isStaff(user: AuthUser): boolean {
+  return user.role !== 'USER';
+}
