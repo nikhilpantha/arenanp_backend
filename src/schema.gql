@@ -264,25 +264,55 @@ type AdminSettlement {
 }
 
 """
-A sport in the platform catalogue. Every Court / Tournament references one of these, every Venue can offer many.
+A sport in the platform catalogue. Every Court / Tournament references one of these, every Venue can offer many. These fields are the whole contract venue setup renders from — no client should know a sport by name.
 """
 type AdminSport {
+  bookingMode: SportBookingMode!
+
+  """Per-court features an owner toggles."""
+  courtFeatures: [String!]!
   createdAt: DateTime!
   createdBy: AdminUser
+
+  """Places per slot when bookingMode is CAPACITY."""
+  defaultCapacity: Int
+
+  """Slot length a new court starts on; one of `slotDurations`."""
+  defaultSlotMinutes: Int!
   description: String
   displayOrder: Int!
 
-  """Amenity presets offered for this sport."""
-  features: [String!]!
+  """
+  Flat chip list kept for the mobile app until it moves to the typed catalogues.
+  """
+  features: [String!]! @deprecated(reason: "Derived from surfaces + formats + courtFeatures. Read those instead.")
+
+  """Configurations sold, e.g. ["5-a-side"]."""
+  formats: [String!]!
   iconUrl: String
   id: ID!
   isActive: Boolean!
+  maxDurationMinutes: Int
+  minDurationMinutes: Int
   name: String!
+  pricingUnit: SportPricingUnit!
 
   """Allowed booking slot lengths (minutes) for this sport."""
   slotDurations: [Int!]!
   slug: String!
+
+  """Playing surfaces an owner picks one of, per court."""
+  surfaces: [String!]!
+
+  """What one bookable unit is called, e.g. "court", "lane", "table"."""
+  unitLabel: String!
+  unitLabelPlural: String!
   updatedAt: DateTime!
+
+  """
+  Reference counts. Note that deactivating a sport hides it from new venue setup but does NOT unpublish courts that already use it.
+  """
+  usage: SportUsage!
 }
 
 """
@@ -683,6 +713,15 @@ input CompleteVenueBookingInput {
   venueId: ID!
 }
 
+"""
+Whether a court is INDOOR, OUTDOOR, or ROOFED (netted/covered, no walls).
+"""
+enum CourtEnvironment {
+  INDOOR
+  OUTDOOR
+  ROOFED
+}
+
 """A single bookable time window for a court."""
 type CourtSlot {
   """False if already booked or in the past."""
@@ -812,16 +851,36 @@ input CreateOfferInput {
 }
 
 input CreateSportInput {
+  """EXCLUSIVE takes the whole surface; CAPACITY sells N places per slot."""
+  bookingMode: SportBookingMode! = EXCLUSIVE
+
+  """Per-court features, e.g. ["Floodlights", "Air-Conditioned"]."""
+  courtFeatures: [String!]! = []
+
+  """Places per slot. Required when `bookingMode` is CAPACITY."""
+  defaultCapacity: Int
+
+  """Slot length a new court starts on. Must be one of `slotDurations`."""
+  defaultSlotMinutes: Int! = 60
   description: String
   displayOrder: Int! = 0
 
-  """Amenity presets for this sport."""
-  features: [String!]! = []
+  """Configurations sold, e.g. ["5-a-side", "7-a-side"]."""
+  formats: [String!]! = []
   iconUrl: String
   isActive: Boolean! = true
 
+  """Longest bookable duration in minutes."""
+  maxDurationMinutes: Int
+
+  """Shortest bookable duration in minutes (a cricket ground needs 240)."""
+  minDurationMinutes: Int
+
   """Display name (e.g. "Table Tennis")."""
   name: String!
+
+  """The unit an owner types a price in. Storage stays per hour."""
+  pricingUnit: SportPricingUnit! = PER_HOUR
 
   """Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120]."""
   slotDurations: [Int!]! = [30, 60, 90, 120]
@@ -830,6 +889,15 @@ input CreateSportInput {
   URL-safe slug. Auto-generated from `name` if omitted. Lowercase letters, digits and hyphens only.
   """
   slug: String
+
+  """Playing surfaces an owner picks from, e.g. ["Artificial Turf"]."""
+  surfaces: [String!]! = []
+
+  """What one bookable unit is called — court, pitch, lane, table, bay."""
+  unitLabel: String! = "court"
+
+  """Plural of `unitLabel`, e.g. "courts", "lanes"."""
+  unitLabelPlural: String! = "courts"
 }
 
 input CreateSubscriptionInput {
@@ -1976,6 +2044,11 @@ type Query {
   """Public venue detail with its courts."""
   venue(venueId: ID!): VenueDetail!
 
+  """
+  The closed catalogue of venue-wide amenities. Free text is not accepted — amenities are a marketplace filter, so clients must offer these and store the slug.
+  """
+  venueAmenities: [VenueAmenityOption!]!
+
   """A single booking by id."""
   venueBooking(bookingId: ID!, venueId: ID!): BookingModel!
 
@@ -2181,20 +2254,66 @@ enum SortOrder {
   DESC
 }
 
+"""
+EXCLUSIVE — one booking takes the whole surface (a futsal court). CAPACITY — the surface sells N places per slot (a pool lane, a skating session).
+"""
+enum SportBookingMode {
+  CAPACITY
+  EXCLUSIVE
+}
+
 """A bookable sport from the platform catalogue."""
 type SportModel {
+  bookingMode: SportBookingMode!
+
+  """Per-court features — toggle any."""
+  courtFeatures: [String!]!
+
+  """Places per slot when bookingMode is CAPACITY."""
+  defaultCapacity: Int
+
+  """Slot length a new court starts on; one of `slotDurations`."""
+  defaultSlotMinutes: Int!
   description: String
   displayOrder: Int!
 
-  """Amenity presets to offer for this sport."""
-  features: [String!]!
+  """
+  Flat chip list kept for the mobile app until it moves to the typed catalogues.
+  """
+  features: [String!]! @deprecated(reason: "Derived from surfaces + formats + courtFeatures. Read those instead.")
+
+  """Configurations sold — pick one per court."""
+  formats: [String!]!
   iconUrl: String
   id: ID!
+  maxDurationMinutes: Int
+  minDurationMinutes: Int
   name: String!
+
+  """The unit an owner prices in. Storage is always per hour."""
+  pricingUnit: SportPricingUnit!
 
   """Allowed booking slot lengths (minutes) for this sport."""
   slotDurations: [Int!]!
   slug: String!
+
+  """Playing surfaces — pick one per court."""
+  surfaces: [String!]!
+
+  """What one bookable unit is called, e.g. "court", "lane", "table"."""
+  unitLabel: String!
+  unitLabelPlural: String!
+}
+
+"""
+The unit a venue owner prices this sport in: PER_HOUR, PER_SLOT, PER_SESSION, PER_DAY or PER_PERSON_SLOT. Storage stays Court.pricePerHour — this governs entry and display only.
+"""
+enum SportPricingUnit {
+  PER_DAY
+  PER_HOUR
+  PER_PERSON_SLOT
+  PER_SESSION
+  PER_SLOT
 }
 
 """
@@ -2207,9 +2326,21 @@ type SportStub {
   slug: String!
 }
 
+"""Where a sport is currently referenced across the platform."""
+type SportUsage {
+  courts: Int!
+  tournaments: Int!
+  venues: Int!
+}
+
 input SubmitVenueInput {
   additionalServices: [AdditionalServiceInput!]! = []
   address: String!
+
+  """
+  Venue-wide amenity slugs from the `venueAmenities` catalogue. Free text is rejected — amenities are a marketplace filter.
+  """
+  amenities: [String!]! = []
   city: String
   closeTime: String
   contactEmail: String
@@ -2312,6 +2443,7 @@ enum TournamentStatus {
   COMPLETED
   DRAFT
   PENDING_APPROVAL
+  REJECTED
   SUSPENDED
 }
 
@@ -2385,19 +2517,43 @@ input UpdateProfileInput {
 }
 
 input UpdateSportInput {
+  bookingMode: SportBookingMode
+
+  """Per-court features, e.g. ["Floodlights"]."""
+  courtFeatures: [String!]
+
+  """Places per slot. Required when `bookingMode` is CAPACITY."""
+  defaultCapacity: Int
+  defaultSlotMinutes: Int
   description: String
   displayOrder: Int
 
-  """Amenity presets for this sport."""
-  features: [String!]
+  """Configurations sold, e.g. ["5-a-side"]."""
+  formats: [String!]
   iconUrl: String
   id: ID!
   isActive: Boolean
+
+  """Longest bookable duration in minutes."""
+  maxDurationMinutes: Int
+
+  """Shortest bookable duration in minutes."""
+  minDurationMinutes: Int
   name: String
+  pricingUnit: SportPricingUnit
 
   """Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120]."""
   slotDurations: [Int!]
   slug: String
+
+  """Playing surfaces an owner picks from."""
+  surfaces: [String!]
+
+  """What one bookable unit is called — court, pitch, lane, table, bay."""
+  unitLabel: String
+
+  """Plural of `unitLabel`."""
+  unitLabelPlural: String
 }
 
 input UpdateTournamentStatusInput {
@@ -2433,6 +2589,9 @@ input UpdateVenueBookingInput {
 input UpdateVenueProfileInput {
   additionalServices: [AdditionalServiceInput!]
   address: String
+
+  """Venue-wide amenity slugs."""
+  amenities: [String!]
   city: String
   closeTime: String
   contactEmail: String
@@ -2496,6 +2655,15 @@ enum UserRole {
   USER
 }
 
+"""A venue-wide amenity an owner can claim during setup."""
+type VenueAmenityOption {
+  """Human label to render. Never show the raw slug."""
+  label: String!
+
+  """Canonical slug stored on `Venue.amenities`."""
+  slug: String!
+}
+
 """Top-of-screen overview numbers for a venue's bookings."""
 type VenueBookingSummary {
   bookingsToday: Int!
@@ -2522,8 +2690,14 @@ type VenueCard {
 
 """A bookable surface (court / ground / pitch) within a venue."""
 type VenueCourt {
+  """Places per slot for CAPACITY sports."""
+  capacity: Int
   description: String
+  environment: CourtEnvironment
   features: [String!]!
+
+  """One of the sport's formats."""
+  format: String
   id: ID!
   imageUrls: [String!]!
   isActive: Boolean!
@@ -2531,14 +2705,36 @@ type VenueCourt {
   pricePerHour: Float!
   slotMinutes: Int!
   sport: SportStub!
+
+  """One of the sport's surfaces."""
+  surface: String
 }
 
-"""A single court: its name, slot length and price."""
+"""
+One bookable unit. Attribute values must come from the parent sport's catalogue (`surfaces`, `formats`, `courtFeatures`) — the server rejects anything else.
+"""
 input VenueCourtInput {
+  """Places per slot. Required when the sport is CAPACITY-booked."""
+  capacity: Int
+  description: String
+  environment: CourtEnvironment
+
+  """Subset of `Sport.courtFeatures`."""
+  features: [String!]! = []
+
+  """One of `Sport.formats`."""
+  format: String
+
+  """S3 keys from createUploadUrl."""
+  imageUrls: [String!]! = []
+
   """Court name. Defaults to the sport name (+ index)."""
   name: String
   pricePerHour: Float!
   slotMinutes: Int! = 60
+
+  """One of `Sport.surfaces`."""
+  surface: String
 }
 
 """A venue's customer (person or team) — loyalty is keyed by this id."""
@@ -2663,7 +2859,9 @@ input VenueServiceInput {
   Per-court detail; overrides courtCount/slotMinutes/pricePerHour when set.
   """
   courts: [VenueCourtInput!]
-  features: [String!]! = []
+
+  """Legacy: fanned out onto every court that omits its own features."""
+  features: [String!]! = [] @deprecated(reason: "Set `features` on each court instead — a venue can have a wooden court and a cement one.")
 
   """Legacy: per-hour price when courts[] is omitted."""
   pricePerHour: Float
