@@ -1,0 +1,77 @@
+// ─── Venue finance: expenses + cash reconciliation ──────────────────────────
+//
+// Income is *not* modelled here — it is derived live from bookings,
+// subscription payments and settlements (see the `finance` module's
+// aggregation queries). These two models add the pieces those rails can't
+// reconstruct: operating costs (for net profit) and the end-of-day cash count.
+
+/// Operating-cost categories an owner tracks against a venue.
+enum ExpenseCategory {
+  RENT
+  SALARY
+  UTILITIES
+  EQUIPMENT
+  MAINTENANCE
+  MARKETING
+  SUPPLIES
+  TAX
+  OTHER
+}
+
+/// A single operating expense booked against a venue. `incurredAt` is the date the
+/// cost applies to (owner-picked) — finance reports bucket by it, not by createdAt,
+/// so back-dating last month's rent lands in the right period. `paymentMethod` reuses
+/// the shared PaymentProvider enum so cash-out can feed cash reconciliation.
+model Expense {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  category    ExpenseCategory @default(OTHER)
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("NPR")
+  description String?
+  vendor      String?
+
+  paymentMethod PaymentProvider?
+  incurredAt    DateTime
+
+  createdById String?
+  createdBy   User?   @relation("UserExpensesCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId, incurredAt])
+  @@index([venueId, category])
+  @@map("expenses")
+}
+
+/// End-of-day cash count ("day close") for a venue. At close, the system snapshots
+/// `expectedCash` (opening float + cash collected − cash paid out that Nepal business
+/// day) and records the physical `countedCash`; `variance = counted − expected` flags
+/// drawer discrepancies. One close per venue per business day.
+model CashReconciliation {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  businessDate DateTime @db.Date
+
+  openingFloat Decimal @default(0) @db.Decimal(10, 2)
+  expectedCash Decimal @db.Decimal(10, 2)
+  countedCash  Decimal @db.Decimal(10, 2)
+  variance     Decimal @db.Decimal(10, 2)
+  notes        String?
+
+  closedById String?
+  closedBy   User?    @relation("UserCashClosed", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt   DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([venueId, businessDate])
+  @@index([venueId])
+  @@map("cash_reconciliations")
+}

@@ -49,24 +49,24 @@ enum MembershipStatus {
 /// lives in its own table (player_profiles, organizer_profiles, venues).
 /// Capabilities (PLAYER / VENUE / ORGANIZER / COACH) live in `user_capabilities`.
 model User {
-  id           String    @id @default(cuid())
-  fullName     String?
-  phoneNumber  String    @unique
-  email        String?   @unique
-  passwordHash String?
-  role         UserRole  @default(USER)
-  avatarUrl    String?
-  isActive     Boolean   @default(true)
+  id              String    @id @default(cuid())
+  fullName        String?
+  phoneNumber     String    @unique
+  email           String?   @unique
+  passwordHash    String?
+  role            UserRole  @default(USER)
+  avatarUrl       String?
+  isActive        Boolean   @default(true)
   /// Set on the first successful OTP verification. Password login is only
   /// allowed once the phone has been verified at least once.
   phoneVerifiedAt DateTime?
   /// Monotonically increasing counter embedded in JWTs. Sign-out, suspend and
   /// role/capability changes bump this so any previously-issued token whose
   /// claim doesn't match the current value is rejected by JwtStrategy.
-  tokenVersion Int       @default(1)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  tokenVersion    Int       @default(1)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Layer 2 — capabilities (status gates)
   capabilities UserCapability[]
@@ -111,12 +111,18 @@ model User {
   tournamentsReviewed              Tournament[]             @relation("UserTournamentsReviewed")
   tournamentsClosed                Tournament[]             @relation("UserTournamentsClosed")
   tournamentRegistrationsCaptained TournamentRegistration[] @relation("UserTournamentRegistrations")
+  tournamentPlayerProfiles         TournamentPlayer[]       @relation("UserTournamentPlayerProfiles")
+  matchEventsRecorded              MatchEvent[]             @relation("UserMatchEventsRecorded")
+  matchDelegations                 MatchDelegate[]          @relation("UserMatchDelegations")
 
   platformSettingsUpdated  PlatformSetting[] @relation("UserPlatformSettingsUpdated")
   venueInvitationsCreated  VenueInvitation[] @relation("UserVenueInvitationsCreated")
   venueInvitationsAccepted VenueInvitation[] @relation("UserVenueInvitationsAccepted")
   sportsCreated            Sport[]           @relation("UserSportsCreated")
   venueClosuresCreated     VenueClosure[]    @relation("UserVenueClosuresCreated")
+
+  expensesCreated     Expense[]            @relation("UserExpensesCreated")
+  cashReconciliations CashReconciliation[] @relation("UserCashClosed")
 
   @@index([role])
   @@map("users")
@@ -161,17 +167,29 @@ model PlayerProfile {
 /// capability is requested; the living record once approved (the verification
 /// request stays as the immutable application + audit trail).
 model OrganizerProfile {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   businessName String?
   contactEmail String?
   contactPhone String?
   city         String?
   bio          String?
   experience   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  // Public-facing "professional" identity — filled in by the organizer after
+  // approval via the edit-profile screen (not part of the KYC application).
+  logoUrl            String? // Organization logo (S3 object key)
+  bannerUrl          String? // Organization banner / cover (S3 object key)
+  website            String?
+  facebookUrl        String?
+  instagramUrl       String?
+  tiktokUrl          String?
+  youtubeUrl         String?
+  termsAndConditions String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("organizer_profiles")
 }

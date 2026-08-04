@@ -16,6 +16,9 @@ model PlatformSetting {
   cancellationWindowHours      Int     @default(24)
   refundPolicyText             String?
   bookingServiceFee            Decimal @default(0) @db.Decimal(10, 2)
+  /// Flat fee (NPR) an organizer pays to list a tournament. 0 = listing is
+  /// free and a draft goes straight to admin review on submission.
+  tournamentListingFee         Decimal @default(500) @db.Decimal(10, 2)
 
   paymentProvidersEnabled PaymentProvider[] @default([])
 
