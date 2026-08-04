@@ -1,18 +1,33 @@
 import { Field, ID, InputType, Int } from '@nestjs/graphql';
+import { SportBookingMode, SportPricingUnit } from '@prisma/client';
 import {
-  ArrayMaxSize,
-  IsArray,
   IsBoolean,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
   Matches,
-  Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
 
+import {
+  BoundedIntField,
+  LabelField,
+  SlotDurationsField,
+  TagListField,
+} from './sport-field.decorators';
+
+/**
+ * The sport catalogue is what makes venue setup sport-agnostic: every label,
+ * price unit, slot length and attribute an owner sees is read from the row an
+ * admin fills in here, so adding a sport never needs a deploy.
+ *
+ * Note `features` is no longer an input — it is derived on write as
+ * surfaces + formats + courtFeatures, and kept only so the Expo app's setup
+ * screen keeps working until it moves to the typed lists.
+ */
 @InputType()
 export class CreateSportInput {
   @Field({ description: 'Display name (e.g. "Table Tennis").' })
@@ -46,25 +61,71 @@ export class CreateSportInput {
   @MaxLength(500)
   description?: string;
 
-  @Field(() => [String], { defaultValue: [], description: 'Amenity presets for this sport.' })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @MaxLength(60, { each: true })
-  @ArrayMaxSize(40)
-  features?: string[] = [];
+  // ── How the sport is sold ─────────────────────────────────────────────────
 
-  @Field(() => [Int], {
-    defaultValue: [30, 60, 90, 120],
-    description: 'Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120].',
+  @Field(() => SportPricingUnit, {
+    defaultValue: SportPricingUnit.PER_HOUR,
+    description: 'The unit an owner types a price in. Storage stays per hour.',
   })
   @IsOptional()
-  @IsArray()
-  @IsInt({ each: true })
-  @Min(5, { each: true })
-  @Max(600, { each: true })
-  @ArrayMaxSize(12)
+  @IsEnum(SportPricingUnit)
+  pricingUnit?: SportPricingUnit = SportPricingUnit.PER_HOUR;
+
+  @LabelField('What one bookable unit is called — court, pitch, lane, table, bay.', 'court', {
+    create: true,
+  })
+  unitLabel?: string = 'court';
+
+  @LabelField('Plural of `unitLabel`, e.g. "courts", "lanes".', 'courts', { create: true })
+  unitLabelPlural?: string = 'courts';
+
+  @SlotDurationsField({ create: true })
   slotDurations?: number[] = [30, 60, 90, 120];
+
+  @Field(() => Int, {
+    defaultValue: 60,
+    description: 'Slot length a new court starts on. Must be one of `slotDurations`.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  defaultSlotMinutes?: number = 60;
+
+  @BoundedIntField('Shortest bookable duration in minutes (a cricket ground needs 240).', {
+    min: 5,
+    max: 1440,
+  })
+  minDurationMinutes?: number;
+
+  @BoundedIntField('Longest bookable duration in minutes.', { min: 5, max: 1440 })
+  maxDurationMinutes?: number;
+
+  @Field(() => SportBookingMode, {
+    defaultValue: SportBookingMode.EXCLUSIVE,
+    description: 'EXCLUSIVE takes the whole surface; CAPACITY sells N places per slot.',
+  })
+  @IsOptional()
+  @IsEnum(SportBookingMode)
+  bookingMode?: SportBookingMode = SportBookingMode.EXCLUSIVE;
+
+  @BoundedIntField('Places per slot. Required when `bookingMode` is CAPACITY.', {
+    min: 1,
+    max: 500,
+  })
+  defaultCapacity?: number;
+
+  // ── Court attribute catalogues ────────────────────────────────────────────
+
+  @TagListField('Playing surfaces an owner picks from, e.g. ["Artificial Turf"].', { create: true })
+  surfaces?: string[] = [];
+
+  @TagListField('Configurations sold, e.g. ["5-a-side", "7-a-side"].', { create: true })
+  formats?: string[] = [];
+
+  @TagListField('Per-court features, e.g. ["Floodlights", "Air-Conditioned"].', { create: true })
+  courtFeatures?: string[] = [];
+
+  // ── Listing ───────────────────────────────────────────────────────────────
 
   @Field(() => Int, { defaultValue: 0 })
   @IsOptional()
@@ -78,6 +139,7 @@ export class CreateSportInput {
   isActive?: boolean = true;
 }
 
+/** Patch semantics: every field is optional, and `undefined` means "leave it". */
 @InputType()
 export class UpdateSportInput {
   @Field(() => ID)
@@ -112,25 +174,53 @@ export class UpdateSportInput {
   @MaxLength(500)
   description?: string;
 
-  @Field(() => [String], { nullable: true, description: 'Amenity presets for this sport.' })
+  @Field(() => SportPricingUnit, { nullable: true })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @MaxLength(60, { each: true })
-  @ArrayMaxSize(40)
-  features?: string[];
+  @IsEnum(SportPricingUnit)
+  pricingUnit?: SportPricingUnit;
 
-  @Field(() => [Int], {
-    nullable: true,
-    description: 'Allowed booking slot lengths (minutes), e.g. [30, 60, 90, 120].',
+  @LabelField('What one bookable unit is called — court, pitch, lane, table, bay.', 'court', {
+    create: false,
   })
-  @IsOptional()
-  @IsArray()
-  @IsInt({ each: true })
-  @Min(5, { each: true })
-  @Max(600, { each: true })
-  @ArrayMaxSize(12)
+  unitLabel?: string;
+
+  @LabelField('Plural of `unitLabel`.', 'courts', { create: false })
+  unitLabelPlural?: string;
+
+  @SlotDurationsField({ create: false })
   slotDurations?: number[];
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  defaultSlotMinutes?: number;
+
+  @BoundedIntField('Shortest bookable duration in minutes.', { min: 5, max: 1440 })
+  minDurationMinutes?: number;
+
+  @BoundedIntField('Longest bookable duration in minutes.', { min: 5, max: 1440 })
+  maxDurationMinutes?: number;
+
+  @Field(() => SportBookingMode, { nullable: true })
+  @IsOptional()
+  @IsEnum(SportBookingMode)
+  bookingMode?: SportBookingMode;
+
+  @BoundedIntField('Places per slot. Required when `bookingMode` is CAPACITY.', {
+    min: 1,
+    max: 500,
+  })
+  defaultCapacity?: number;
+
+  @TagListField('Playing surfaces an owner picks from.', { create: false })
+  surfaces?: string[];
+
+  @TagListField('Configurations sold, e.g. ["5-a-side"].', { create: false })
+  formats?: string[];
+
+  @TagListField('Per-court features, e.g. ["Floodlights"].', { create: false })
+  courtFeatures?: string[];
 
   @Field(() => Int, { nullable: true })
   @IsOptional()

@@ -5,6 +5,7 @@ import { StorageService } from '../../storage/storage.service';
 import { VenueRepository } from './venue.repository';
 import { mapMembershipToGraphql, VenueMembershipModel } from './dto/venue-membership.model';
 import { mapVenueToGraphql, VenueModel } from './dto/venue.model';
+import { assertCourtsMatchSports, assertOperatingHours } from './venue-rules';
 import type {
   SetVenueServicesInput,
   SubmitVenueInput,
@@ -36,11 +37,21 @@ export class VenueService {
 
   async submitVenue(userId: string, input: SubmitVenueInput): Promise<VenueModel> {
     const sportsBySlug = await this.resolveSports(input.services.map((s) => s.sportSlug));
+    assertOperatingHours(input.openTime, input.closeTime);
+    assertCourtsMatchSports(input.services, sportsBySlug);
     const venue = await this.repo.submitVenue(userId, input, sportsBySlug);
     return mapVenueToGraphql(venue);
   }
 
   async updateProfile(input: UpdateVenueProfileInput): Promise<VenueModel> {
+    // Hours may be patched one at a time, so compare against what's stored.
+    if (input.openTime !== undefined || input.closeTime !== undefined) {
+      const current = await this.repo.findById(input.venueId);
+      assertOperatingHours(
+        input.openTime ?? current?.openTime,
+        input.closeTime ?? current?.closeTime,
+      );
+    }
     const replacingCover = input.coverImageUrl !== undefined;
     const replacingGallery = input.imageUrls !== undefined;
     // Snapshot current image keys so we can delete the ones being dropped.
@@ -65,6 +76,7 @@ export class VenueService {
 
   async setServices(input: SetVenueServicesInput): Promise<VenueModel> {
     const sportsBySlug = await this.resolveSports(input.services.map((s) => s.sportSlug));
+    assertCourtsMatchSports(input.services, sportsBySlug);
     // Courts are replaced wholesale; capture old court image keys to clean up.
     const before = await this.repo.findById(input.venueId);
     const oldCourtImages = before?.courts.flatMap((c) => c.imageUrls) ?? [];

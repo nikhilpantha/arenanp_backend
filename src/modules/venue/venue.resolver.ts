@@ -7,6 +7,7 @@ import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard
 import type { AuthUser } from '../../common/types/auth-context';
 import { StorageService } from '../../storage/storage.service';
 
+import { listVenueAmenities, VenueAmenityOption } from './dto/venue-amenity.model';
 import { VenueMembershipModel } from './dto/venue-membership.model';
 import {
   SetVenueServicesInput,
@@ -37,6 +38,15 @@ export class VenueResolver {
   @ResolveField(() => [String])
   documentUrls(@Parent() venue: VenueModel): Promise<string[]> {
     return this.storage.getDownloadUrls(venue.documentUrls);
+  }
+
+  @Query(() => [VenueAmenityOption], {
+    name: 'venueAmenities',
+    description:
+      'The closed catalogue of venue-wide amenities. Free text is not accepted — amenities are a marketplace filter, so clients must offer these and store the slug.',
+  })
+  venueAmenities(): VenueAmenityOption[] {
+    return listVenueAmenities();
   }
 
   @Query(() => [VenueModel], {

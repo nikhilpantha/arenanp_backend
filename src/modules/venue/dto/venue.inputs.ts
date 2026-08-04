@@ -1,19 +1,26 @@
 import { Field, Float, ID, InputType, Int } from '@nestjs/graphql';
+import { CourtEnvironment } from '@prisma/client';
 import {
   ArrayMinSize,
   IsArray,
+  IsEmail,
+  IsEnum,
+  IsIn,
   IsLatitude,
   IsLongitude,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+import { VENUE_AMENITIES } from '../../../common/constants/venue-amenities';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -32,7 +39,10 @@ export class AdditionalServiceInput {
   price?: number;
 }
 
-@InputType({ description: 'A single court: its name, slot length and price.' })
+@InputType({
+  description:
+    "One bookable unit. Attribute values must come from the parent sport's catalogue (`surfaces`, `formats`, `courtFeatures`) — the server rejects anything else.",
+})
 export class VenueCourtInput {
   @Field({ nullable: true, description: 'Court name. Defaults to the sport name (+ index).' })
   @IsOptional()
@@ -49,6 +59,53 @@ export class VenueCourtInput {
   @IsNumber()
   @Min(1)
   pricePerHour!: number;
+
+  /** Per-court, unlike the deprecated service-level `features`. */
+  @Field(() => [String], { defaultValue: [], description: 'Subset of `Sport.courtFeatures`.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(60, { each: true })
+  features: string[] = [];
+
+  @Field({ nullable: true, description: 'One of `Sport.surfaces`.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  surface?: string;
+
+  @Field({ nullable: true, description: 'One of `Sport.formats`.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  format?: string;
+
+  @Field(() => CourtEnvironment, { nullable: true })
+  @IsOptional()
+  @IsEnum(CourtEnvironment)
+  environment?: CourtEnvironment;
+
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Places per slot. Required when the sport is CAPACITY-booked.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(500)
+  capacity?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @Field(() => [String], { defaultValue: [], description: 'S3 keys from createUploadUrl.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageUrls: string[] = [];
 }
 
 @InputType({ description: 'A sport the venue offers, with its courts, slot length and price.' })
@@ -96,7 +153,12 @@ export class VenueServiceInput {
   @Min(1)
   pricePerHour?: number;
 
-  @Field(() => [String], { defaultValue: [] })
+  @Field(() => [String], {
+    defaultValue: [],
+    deprecationReason:
+      'Set `features` on each court instead — a venue can have a wooden court and a cement one.',
+    description: 'Legacy: fanned out onto every court that omits its own features.',
+  })
   @IsArray()
   @IsString({ each: true })
   features: string[] = [];
@@ -161,8 +223,21 @@ export class SubmitVenueInput {
   @Matches(TIME_RE, { message: 'closeTime must be HH:mm' })
   closeTime?: string;
 
-  @Field({ nullable: true }) @IsOptional() @IsString() contactEmail?: string;
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsEmail({}, { message: 'Enter a valid email' })
+  contactEmail?: string;
   @Field({ nullable: true }) @IsOptional() @IsString() contactPhone?: string;
+
+  @Field(() => [String], {
+    defaultValue: [],
+    description:
+      'Venue-wide amenity slugs from the `venueAmenities` catalogue. Free text is rejected — amenities are a marketplace filter.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(VENUE_AMENITIES as unknown as string[], { each: true })
+  amenities: string[] = [];
 
   @Field(() => [VenueServiceInput])
   @IsArray()
@@ -213,8 +288,17 @@ export class UpdateVenueProfileInput {
   @Matches(TIME_RE, { message: 'closeTime must be HH:mm' })
   closeTime?: string;
 
-  @Field({ nullable: true }) @IsOptional() @IsString() contactEmail?: string;
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsEmail({}, { message: 'Enter a valid email' })
+  contactEmail?: string;
   @Field({ nullable: true }) @IsOptional() @IsString() contactPhone?: string;
+
+  @Field(() => [String], { nullable: true, description: 'Venue-wide amenity slugs.' })
+  @IsOptional()
+  @IsArray()
+  @IsIn(VENUE_AMENITIES as unknown as string[], { each: true })
+  amenities?: string[];
 
   @Field(() => [AdditionalServiceInput], { nullable: true })
   @IsOptional()

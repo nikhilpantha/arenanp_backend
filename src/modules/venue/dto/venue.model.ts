@@ -1,6 +1,7 @@
 import { Field, Float, ID, Int, ObjectType } from '@nestjs/graphql';
 import {
   Court as PrismaCourt,
+  CourtEnvironment,
   Sport as PrismaSport,
   Venue as PrismaVenue,
   VenueSport as PrismaVenueSport,
@@ -25,6 +26,11 @@ export class VenueCourt {
   @Field(() => Float) pricePerHour!: number;
   @Field(() => Int) slotMinutes!: number;
   @Field(() => [String]) features!: string[];
+  @Field({ nullable: true, description: "One of the sport's surfaces." }) surface?: string;
+  @Field({ nullable: true, description: "One of the sport's formats." }) format?: string;
+  @Field(() => CourtEnvironment, { nullable: true }) environment?: CourtEnvironment;
+  @Field(() => Int, { nullable: true, description: 'Places per slot for CAPACITY sports.' })
+  capacity?: number;
   @Field({ nullable: true }) description?: string;
   @Field() isActive!: boolean;
   // Stored S3 object keys; presigned to download URLs by VenueCourtResolver.
@@ -103,6 +109,10 @@ export function mapVenueCourt(court: CourtWithSport): VenueCourt {
     pricePerHour: Number(court.pricePerHour.toString()),
     slotMinutes: court.slotMinutes,
     features: court.features,
+    surface: court.surface ?? undefined,
+    format: court.format ?? undefined,
+    environment: court.environment ?? undefined,
+    capacity: court.capacity ?? undefined,
     description: court.description ?? undefined,
     isActive: court.isActive,
     imageUrls: court.imageUrls,

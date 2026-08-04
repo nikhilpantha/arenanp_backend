@@ -5,11 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { SportBookingMode, SportPricingUnit } from '@prisma/client';
+
 import type { AuthUser } from '../../../common/types/auth-context';
 import { StorageService } from '../../../storage/storage.service';
 import { AdminSportsRepository } from './admin-sports.repository';
 import { AdminSport, mapSportToAdmin } from './dto/admin-sport.model';
 import { CreateSportInput, UpdateSportInput } from './dto/sport.inputs';
+import {
+  assertSportConfig,
+  deriveFeatures,
+  normaliseSlotDurations,
+  normaliseTags,
+  patch,
+} from './sport-rules';
 
 @Injectable()
 export class AdminSportsService {
@@ -38,15 +47,50 @@ export class AdminSportsService {
       throw new ConflictException(`A sport with slug "${slug}" already exists.`);
     }
 
+    const name = input.name.trim();
+    const surfaces = normaliseTags(input.surfaces);
+    const formats = normaliseTags(input.formats);
+    const courtFeatures = normaliseTags(input.courtFeatures);
+    const slotDurations = normaliseSlotDurations(input.slotDurations);
+    const isActive = input.isActive ?? true;
+
+    assertSportConfig({
+      name,
+      isActive,
+      slotDurations,
+      defaultSlotMinutes: input.defaultSlotMinutes ?? 60,
+      minDurationMinutes: input.minDurationMinutes ?? null,
+      maxDurationMinutes: input.maxDurationMinutes ?? null,
+      bookingMode: input.bookingMode ?? SportBookingMode.EXCLUSIVE,
+      defaultCapacity: input.defaultCapacity ?? null,
+      unitLabel: input.unitLabel ?? 'court',
+      unitLabelPlural: input.unitLabelPlural ?? 'courts',
+    });
+
     const row = await this.repo.create({
       slug,
-      name: input.name.trim(),
+      name,
       iconUrl: input.iconUrl?.trim() || null,
       description: input.description?.trim() || null,
-      features: normaliseFeatures(input.features),
-      slotDurations: normaliseSlotDurations(input.slotDurations),
+
+      pricingUnit: input.pricingUnit ?? SportPricingUnit.PER_HOUR,
+      unitLabel: (input.unitLabel ?? 'court').trim(),
+      unitLabelPlural: (input.unitLabelPlural ?? 'courts').trim(),
+      slotDurations,
+      defaultSlotMinutes: input.defaultSlotMinutes ?? 60,
+      minDurationMinutes: input.minDurationMinutes ?? null,
+      maxDurationMinutes: input.maxDurationMinutes ?? null,
+      bookingMode: input.bookingMode ?? SportBookingMode.EXCLUSIVE,
+      defaultCapacity: input.defaultCapacity ?? null,
+
+      surfaces,
+      formats,
+      courtFeatures,
+      // Derived, never authored — see sport-rules.deriveFeatures.
+      features: deriveFeatures({ surfaces, formats, courtFeatures }),
+
       displayOrder: input.displayOrder ?? 0,
-      isActive: input.isActive ?? true,
+      isActive,
       createdById: actor.id,
     });
     return mapSportToAdmin(row);
@@ -65,6 +109,38 @@ export class AdminSportsService {
 
     const nextIcon = input.iconUrl === undefined ? undefined : input.iconUrl?.trim() || null;
 
+    // Validate the sport as it will be *after* the patch, not the patch alone —
+    // narrowing slotDurations can invalidate a default slot the admin never
+    // touched, and that has to be caught before it reaches an owner's screen.
+    const surfaces =
+      input.surfaces === undefined ? existing.surfaces : normaliseTags(input.surfaces);
+    const formats = input.formats === undefined ? existing.formats : normaliseTags(input.formats);
+    const courtFeatures =
+      input.courtFeatures === undefined
+        ? existing.courtFeatures
+        : normaliseTags(input.courtFeatures);
+    const slotDurations =
+      input.slotDurations === undefined
+        ? existing.slotDurations
+        : normaliseSlotDurations(input.slotDurations);
+    const catalogueChanged =
+      input.surfaces !== undefined ||
+      input.formats !== undefined ||
+      input.courtFeatures !== undefined;
+
+    assertSportConfig({
+      name: input.name?.trim() ?? existing.name,
+      isActive: input.isActive ?? existing.isActive,
+      slotDurations,
+      defaultSlotMinutes: input.defaultSlotMinutes ?? existing.defaultSlotMinutes,
+      minDurationMinutes: patch(input.minDurationMinutes, existing.minDurationMinutes),
+      maxDurationMinutes: patch(input.maxDurationMinutes, existing.maxDurationMinutes),
+      bookingMode: input.bookingMode ?? existing.bookingMode,
+      defaultCapacity: patch(input.defaultCapacity, existing.defaultCapacity),
+      unitLabel: input.unitLabel ?? existing.unitLabel,
+      unitLabelPlural: input.unitLabelPlural ?? existing.unitLabelPlural,
+    });
+
     const updated = await this.repo.update({
       id: input.id,
       data: {
@@ -73,11 +149,28 @@ export class AdminSportsService {
         iconUrl: nextIcon,
         description:
           input.description === undefined ? undefined : input.description?.trim() || null,
-        features: input.features === undefined ? undefined : normaliseFeatures(input.features),
-        slotDurations:
-          input.slotDurations === undefined
-            ? undefined
-            : normaliseSlotDurations(input.slotDurations),
+
+        pricingUnit: input.pricingUnit ?? undefined,
+        unitLabel: input.unitLabel?.trim() ?? undefined,
+        unitLabelPlural: input.unitLabelPlural?.trim() ?? undefined,
+        slotDurations: input.slotDurations === undefined ? undefined : slotDurations,
+        defaultSlotMinutes: input.defaultSlotMinutes ?? undefined,
+        // Pass nullable numerics straight through: `undefined` means "leave it",
+        // an explicit `null` clears it. Collapsing the two would make these
+        // fields permanent once set.
+        minDurationMinutes: input.minDurationMinutes,
+        maxDurationMinutes: input.maxDurationMinutes,
+        bookingMode: input.bookingMode ?? undefined,
+        defaultCapacity: input.defaultCapacity,
+
+        surfaces: input.surfaces === undefined ? undefined : surfaces,
+        formats: input.formats === undefined ? undefined : formats,
+        courtFeatures: input.courtFeatures === undefined ? undefined : courtFeatures,
+        // Keep the deprecated flat list in step with its three sources.
+        features: catalogueChanged
+          ? deriveFeatures({ surfaces, formats, courtFeatures })
+          : undefined,
+
         displayOrder: input.displayOrder ?? undefined,
         isActive: input.isActive ?? undefined,
       },
@@ -118,30 +211,4 @@ export class AdminSportsService {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
   }
-}
-
-/** Trim, drop blanks, and de-duplicate (case-insensitive) the amenity presets. */
-function normaliseFeatures(features?: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of features ?? []) {
-    const value = raw.trim();
-    const key = value.toLowerCase();
-    if (value && !seen.has(key)) {
-      seen.add(key);
-      out.push(value);
-    }
-  }
-  return out;
-}
-
-/** Default slot lengths when an admin clears the list — the app needs at least one option. */
-const DEFAULT_SLOT_DURATIONS = [30, 60, 90, 120];
-
-/** Keep positive whole minutes, de-duplicate, and sort ascending; fall back to defaults. */
-function normaliseSlotDurations(durations?: number[]): number[] {
-  const cleaned = Array.from(
-    new Set((durations ?? []).filter((d) => Number.isInteger(d) && d > 0)),
-  ).sort((a, b) => a - b);
-  return cleaned.length ? cleaned : DEFAULT_SLOT_DURATIONS;
 }

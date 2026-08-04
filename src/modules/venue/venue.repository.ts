@@ -13,6 +13,7 @@ import type {
   SetVenueServicesInput,
   SubmitVenueInput,
   UpdateVenueProfileInput,
+  VenueServiceInput,
 } from './dto/venue.inputs';
 import type { VenueWithRelations } from './dto/venue.model';
 
@@ -33,13 +34,7 @@ const MEMBERSHIP_INCLUDES = {
  */
 function courtsForService(
   sport: Sport,
-  svc: {
-    courts?: { name?: string; slotMinutes: number; pricePerHour: number }[];
-    courtCount: number;
-    slotMinutes: number;
-    pricePerHour?: number;
-    features: string[];
-  },
+  svc: VenueServiceInput,
 ): Prisma.CourtCreateManyVenueInput[] {
   if (svc.courts?.length) {
     const many = svc.courts.length > 1;
@@ -48,7 +43,15 @@ function courtsForService(
       sportId: sport.id,
       pricePerHour: c.pricePerHour,
       slotMinutes: c.slotMinutes,
-      features: svc.features,
+      // Per-court features win; the service-level array is the deprecated
+      // fallback for clients that predate per-court attributes.
+      features: c.features?.length ? c.features : svc.features,
+      surface: c.surface ?? null,
+      format: c.format ?? null,
+      environment: c.environment ?? null,
+      capacity: c.capacity ?? null,
+      description: c.description ?? null,
+      imageUrls: c.imageUrls ?? [],
     }));
   }
 
@@ -133,6 +136,7 @@ export class VenueRepository {
           coverImageUrl: input.coverImageUrl ?? null,
           imageUrls: input.imageUrls,
           documentUrls: input.verification?.documentUrls ?? [],
+          amenities: input.amenities ?? [],
           additionalServices: additionalServicesJson(input.additionalServices),
           openTime: input.openTime ?? '06:00',
           closeTime: input.closeTime ?? '22:00',
@@ -178,6 +182,7 @@ export class VenueRepository {
     if (rest.closeTime !== undefined) data.closeTime = rest.closeTime;
     if (rest.contactEmail !== undefined) data.contactEmail = rest.contactEmail;
     if (rest.contactPhone !== undefined) data.contactPhone = rest.contactPhone;
+    if (rest.amenities !== undefined) data.amenities = rest.amenities;
     if (additionalServices !== undefined) {
       data.additionalServices = additionalServicesJson(additionalServices);
     }
