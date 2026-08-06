@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 import { RedisService } from '../../redis/redis.service';
 import { REDIS_KEYS } from '../../common/constants';
 import type { AppConfig } from '../../config/app.config';
@@ -11,6 +11,13 @@ import type { AppConfig } from '../../config/app.config';
  * is impossible to use against a real SMS provider in production.
  */
 const DEV_MASTER_OTP = '123456';
+
+/**
+ * How long a password-reset ticket lives. Longer than the code's own TTL: the
+ * clock starts once the code is already accepted, and all that's left is typing
+ * a new password.
+ */
+const RESET_TICKET_TTL_SECONDS = 600;
 
 @Injectable()
 export class OtpService {
@@ -93,6 +100,35 @@ export class OtpService {
 
     await this.redis.del(REDIS_KEYS.otpCode(phoneNumber));
     await this.redis.del(REDIS_KEYS.otpAttempts(phoneNumber));
+  }
+
+  /**
+   * Mint a single-use ticket standing in for a code that has just been
+   * verified. Password recovery is two calls — check the code, then set the
+   * password — so the code screen can fail fast on a wrong code instead of
+   * making someone type a new password first. The code itself is spent by
+   * `verify`, so it can't be replayed on the second call.
+   */
+  async issueResetTicket(
+    phoneNumber: string,
+  ): Promise<{ resetToken: string; expiresInSeconds: number }> {
+    const resetToken = randomBytes(32).toString('hex');
+    await this.redis.setEx(
+      REDIS_KEYS.passwordResetTicket(phoneNumber),
+      RESET_TICKET_TTL_SECONDS,
+      resetToken,
+    );
+    return { resetToken, expiresInSeconds: RESET_TICKET_TTL_SECONDS };
+  }
+
+  /** Burn the ticket. Throws unless it's the one held for this number. */
+  async consumeResetTicket(phoneNumber: string, resetToken: string): Promise<void> {
+    const key = REDIS_KEYS.passwordResetTicket(phoneNumber);
+    const stored = await this.redis.get(key);
+    if (!stored || stored !== resetToken) {
+      throw new BadRequestException('This reset expired. Request a new code.');
+    }
+    await this.redis.del(key);
   }
 
   private generateCode(): string {

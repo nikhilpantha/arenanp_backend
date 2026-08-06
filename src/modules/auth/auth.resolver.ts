@@ -5,6 +5,9 @@ import { RequestOtpInput } from './dto/request-otp.input';
 import { VerifyOtpInput } from './dto/verify-otp.input';
 import { LoginWithEmailInput } from './dto/login-with-email.input';
 import { LoginWithPhoneInput } from './dto/login-with-phone.input';
+import { RequestPasswordResetInput } from './dto/request-password-reset.input';
+import { ResetPasswordInput } from './dto/reset-password.input';
+import { PasswordResetTicket } from './dto/password-reset-ticket';
 import { OtpRequestResult } from './dto/otp-request-result';
 import { AuthPayload } from './dto/auth-payload';
 import { Public } from '../../common/decorators/public.decorator';
@@ -89,6 +92,42 @@ export class AuthResolver {
       expiresAt: token.expiresAt,
       user: mapUserToGraphql(user),
     };
+  }
+
+  // ── Password recovery. Three public steps on the same number: send a code,
+  // trade the code for a ticket, trade the ticket for a new password. No access
+  // token comes out of it — a reset ends every session, including this one, so
+  // the account has to be signed into again with the new password.
+
+  @Public()
+  @Mutation(() => OtpRequestResult, {
+    description:
+      'Send a password-reset code. Fails if no account uses this number — unlike the sign-up OTPs it never creates one.',
+  })
+  async requestPasswordReset(
+    @Args('input') input: RequestPasswordResetInput,
+  ): Promise<OtpRequestResult> {
+    return this.authService.requestPasswordReset(input.phoneNumber);
+  }
+
+  @Public()
+  @Mutation(() => PasswordResetTicket, {
+    description: 'Check a password-reset code and return a single-use ticket for resetPassword.',
+  })
+  async verifyPasswordResetCode(
+    @Args('input') input: VerifyOtpInput,
+  ): Promise<PasswordResetTicket> {
+    return this.authService.verifyPasswordResetCode(input.phoneNumber, input.code);
+  }
+
+  @Public()
+  @Mutation(() => Boolean, {
+    description:
+      'Set a new password using a verified reset ticket. Signs out every existing session.',
+  })
+  async resetPassword(@Args('input') input: ResetPasswordInput): Promise<boolean> {
+    await this.authService.resetPassword(input.phoneNumber, input.resetToken, input.newPassword);
+    return true;
   }
 
   @Mutation(() => Boolean, {

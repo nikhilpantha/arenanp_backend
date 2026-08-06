@@ -1548,12 +1548,22 @@ type Mutation {
   requestOrganizerOtp(input: RequestOtpInput!): OtpRequestResult!
 
   """
+  Send a password-reset code. Fails if no account uses this number — unlike the sign-up OTPs it never creates one.
+  """
+  requestPasswordReset(input: RequestPasswordResetInput!): OtpRequestResult!
+
+  """
   Send an OTP and ensure the PLAYER role for this phone (granted instantly).
   """
   requestPlayerOtp(input: RequestOtpInput!): OtpRequestResult!
 
   """Send an OTP and ensure the VENUE (owner) role for this phone."""
   requestVenueOtp(input: RequestOtpInput!): OtpRequestResult!
+
+  """
+  Set a new password using a verified reset ticket. Signs out every existing session.
+  """
+  resetPassword(input: ResetPasswordInput!): Boolean!
 
   """Pause, resume, cancel or expire a subscription."""
   setSubscriptionStatus(input: SetSubscriptionStatusInput!): SubscriptionModel!
@@ -1599,6 +1609,11 @@ type Mutation {
 
   """Verify an OTP and return an access token."""
   verifyOtp(input: VerifyOtpInput!): AuthPayload!
+
+  """
+  Check a password-reset code and return a single-use ticket for resetPassword.
+  """
+  verifyPasswordResetCode(input: VerifyOtpInput!): PasswordResetTicket!
 }
 
 input MyBookingsInput {
@@ -1775,6 +1790,14 @@ input PaginationInput {
 
   """Page size, max 100."""
   pageSize: Int! = 20
+}
+
+type PasswordResetTicket {
+  """How long the ticket stays usable."""
+  expiresInSeconds: Int!
+
+  """Pass this back to resetPassword. Valid once."""
+  resetToken: String!
 }
 
 """
@@ -2185,8 +2208,21 @@ input RequestOtpInput {
   phoneNumber: String!
 }
 
+input RequestPasswordResetInput {
+  phoneNumber: String!
+}
+
 input ResendVenueInvitationInput {
   invitationId: ID!
+}
+
+input ResetPasswordInput {
+  """The new password (min 8 characters)."""
+  newPassword: String!
+  phoneNumber: String!
+
+  """The single-use token returned by verifyPasswordResetCode."""
+  resetToken: String!
 }
 
 type RevenueTrendPoint {

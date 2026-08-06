@@ -185,6 +185,60 @@ export class AuthService {
   }
 
   /**
+   * Password recovery, step 1 of 3: text a code to an EXISTING account.
+   *
+   * Deliberately not `requestOtp`: that one upserts the user and grants a role,
+   * which is right for sign-up and wrong here — you can only recover an account
+   * that already exists, and recovering it must never change what it can do.
+   */
+  async requestPasswordReset(rawPhone: string) {
+    const phone = this.parsePhone(rawPhone);
+    await this.findResettableUser(phone);
+    const result = await this.otp.issue(phone);
+    return { phoneNumber: phone, ...result };
+  }
+
+  /**
+   * Step 2: check the code and hand back a short-lived ticket. Splitting this
+   * from the reset itself is what lets the code screen answer "wrong code"
+   * immediately, before anyone types a new password.
+   */
+  async verifyPasswordResetCode(rawPhone: string, code: string) {
+    const phone = this.parsePhone(rawPhone);
+    await this.findResettableUser(phone);
+    await this.otp.verify(phone, code);
+    return this.otp.issueResetTicket(phone);
+  }
+
+  /** Step 3: spend the ticket on a new password and end every live session. */
+  async resetPassword(rawPhone: string, resetToken: string, newPassword: string): Promise<void> {
+    const phone = this.parsePhone(rawPhone);
+    const user = await this.findResettableUser(phone);
+    await this.otp.consumeResetTicket(phone, resetToken);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await argon2.hash(newPassword, { type: argon2.argon2id }),
+        // The code proved they hold the number, and password login is gated on
+        // this — so a reset also unblocks an account that never verified.
+        phoneVerifiedAt: user.phoneVerifiedAt ?? new Date(),
+        // Every token signed before the change stops working: whoever forced
+        // the reset should not stay signed in on their old session.
+        tokenVersion: { increment: 1 },
+      },
+    });
+  }
+
+  /** The account a reset may target — it has to exist and still be usable. */
+  private async findResettableUser(phone: string): Promise<User> {
+    const user = await this.prisma.user.findUnique({ where: { phoneNumber: phone } });
+    if (!user) throw new BadRequestException('No Arena NP account uses this number.');
+    if (!user.isActive) throw new BadRequestException('This account has been deactivated.');
+    return user;
+  }
+
+  /**
    * Public helper used by other modules (e.g. invitation accept) to mint an
    * access token for a user without going through OTP / password.
    */
