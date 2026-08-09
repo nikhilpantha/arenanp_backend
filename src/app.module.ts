@@ -18,6 +18,8 @@ import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { EmailModule } from './modules/email/email.module';
+import { RbacModule } from './modules/rbac/rbac.module';
 import { BookingModule } from './modules/booking/booking.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { OffersModule } from './modules/offers/offers.module';
@@ -58,11 +60,13 @@ import { HealthController } from './health.controller';
     RedisModule,
     MailerModule,
     StorageModule,
+    EmailModule,
 
     CapabilitiesModule,
     AuthModule,
     UsersModule,
     AdminModule,
+    RbacModule,
     VenueModule,
     BookingModule,
     DiscoveryModule,

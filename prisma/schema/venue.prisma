@@ -53,6 +53,7 @@ model Venue {
   reviewedAt   DateTime?
 
   memberships VenueMembership[]
+  staff       VenueStaff[]  // Platform-level venue staff
   courts      Court[]
   bookings    Booking[]
   settlements Settlement[]

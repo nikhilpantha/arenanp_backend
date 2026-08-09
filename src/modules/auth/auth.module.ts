@@ -11,16 +11,15 @@ import { OtpService } from './otp.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { CapabilityGuard } from '../../common/guards/capability.guard';
-import { PlatformStaffGuard } from '../../common/guards/platform-staff.guard';
+import { PermissionGuard } from '../../common/guards/permission.guard';
 import { CapabilitiesModule } from '../capabilities/capabilities.module';
+import { RbacModule } from '../rbac/rbac.module';
 import { PrismaModule } from '../../database/prisma.module';
 import { RedisModule } from '../../redis/redis.module';
 import { AuditModule } from '../audit/audit.module';
 import { PermissionCacheService } from './permission-cache.service';
 import { ResourceOwnershipService } from './resource-ownership.service';
-import { RoleGrantService } from './role-grant.service';
 
 // Force GraphQL enums to be registered before resolvers compile.
 import '../../common/enums';
@@ -31,6 +30,7 @@ import '../../common/enums';
     PrismaModule,
     RedisModule,
     AuditModule,
+    RbacModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -53,12 +53,11 @@ import '../../common/enums';
     JwtStrategy,
     PermissionCacheService,
     ResourceOwnershipService,
-    RoleGrantService,
     // Globally protect every route/resolver. Mark endpoints with @Public() to opt out.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: CapabilityGuard },
-    { provide: APP_GUARD, useClass: PlatformStaffGuard },
+    // Dynamic RBAC — enforces @RequirePermission() against the roles tables.
+    { provide: APP_GUARD, useClass: PermissionGuard },
   ],
   exports: [
     AuthService,
@@ -66,7 +65,6 @@ import '../../common/enums';
     PassportModule,
     PermissionCacheService,
     ResourceOwnershipService,
-    RoleGrantService,
   ],
 })
 export class AuthModule {}

@@ -37,7 +37,7 @@ export class SubscriptionsResolver {
     description: "A venue's membership plans.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('bookings:read')
+  @RequireVenuePermission('venue.bookings.view')
   venueMembershipPlans(
     @Args('input') input: ListMembershipPlansInput,
   ): Promise<MembershipPlanModel[]> {
@@ -71,7 +71,7 @@ export class SubscriptionsResolver {
     description: 'Create a membership plan.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('memberships:manage')
+  @RequireVenuePermission('venue.memberships.manage')
   createMembershipPlan(
     @Args('input') input: CreateMembershipPlanInput,
   ): Promise<MembershipPlanModel> {
@@ -83,7 +83,7 @@ export class SubscriptionsResolver {
     description: 'Update / activate / deactivate a membership plan.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('memberships:manage')
+  @RequireVenuePermission('venue.memberships.manage')
   updateMembershipPlan(
     @Args('input') input: UpdateMembershipPlanInput,
   ): Promise<MembershipPlanModel> {
@@ -95,7 +95,7 @@ export class SubscriptionsResolver {
     description: 'Delete a membership plan.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('memberships:manage')
+  @RequireVenuePermission('venue.memberships.manage')
   deleteMembershipPlan(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('planId', { type: () => ID }) planId: string,
@@ -110,7 +110,7 @@ export class SubscriptionsResolver {
     description: "A venue's subscriptions (excludes CANCELLED unless filtered), paginated.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('bookings:read')
+  @RequireVenuePermission('venue.bookings.view')
   venueSubscriptions(
     @Args('input') input: ListSubscriptionsInput,
   ): Promise<PaginatedSubscriptions> {
@@ -122,7 +122,7 @@ export class SubscriptionsResolver {
     description: 'A single subscription with its payment history.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('bookings:read')
+  @RequireVenuePermission('venue.bookings.view')
   venueSubscription(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('subscriptionId', { type: () => ID }) subscriptionId: string,
@@ -135,7 +135,7 @@ export class SubscriptionsResolver {
     description: 'Subscribe a customer to a plan (records the first payment).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('memberships:manage')
+  @RequireVenuePermission('venue.memberships.manage')
   createSubscription(@Args('input') input: CreateSubscriptionInput): Promise<SubscriptionModel> {
     return this.service.createSubscription(input);
   }
@@ -168,7 +168,7 @@ export class SubscriptionsResolver {
     description: 'Renew a subscription (extends the window + records a payment).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('memberships:manage')
+  @RequireVenuePermission('venue.memberships.manage')
   renewSubscription(@Args('input') input: RenewSubscriptionInput): Promise<SubscriptionModel> {
     return this.service.renewSubscription(input);
   }
@@ -178,7 +178,7 @@ export class SubscriptionsResolver {
     description: 'Pause, resume, cancel or expire a subscription.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('memberships:manage')
+  @RequireVenuePermission('venue.memberships.manage')
   setSubscriptionStatus(
     @Args('input') input: SetSubscriptionStatusInput,
   ): Promise<SubscriptionModel> {
@@ -192,7 +192,7 @@ export class SubscriptionsResolver {
     description: 'Venue membership KPIs (active, expiring, revenue, renewal rate).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('bookings:read')
+  @RequireVenuePermission('venue.bookings.view')
   venueMembershipStats(
     @Args('venueId', { type: () => ID }) venueId: string,
   ): Promise<MembershipStatsModel> {

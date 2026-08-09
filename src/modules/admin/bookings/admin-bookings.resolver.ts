@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 
 import { AdminBookingsService } from './admin-bookings.service';
@@ -14,8 +11,7 @@ import { PaginatedAdminBookings } from './dto/paginated-admin-bookings';
 import { CancelBookingByAdminInput, MarkBookingCompletedInput } from './dto/booking-action.inputs';
 
 @Resolver(() => AdminBooking)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('bookings.view')
 export class AdminBookingsResolver {
   constructor(private readonly service: AdminBookingsService) {}
 
@@ -38,6 +34,7 @@ export class AdminBookingsResolver {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('bookings.cancel')
   @Mutation(() => AdminBooking, {
     name: 'adminCancelBooking',
     description: 'Cancel a booking on the user’s behalf. A reason is required.',
@@ -49,6 +46,7 @@ export class AdminBookingsResolver {
     return this.service.cancel(input, actor);
   }
 
+  @RequirePermission('bookings.edit')
   @Mutation(() => AdminBooking, {
     name: 'adminMarkBookingCompleted',
     description: 'Mark a paid / CONFIRMED booking as COMPLETED.',

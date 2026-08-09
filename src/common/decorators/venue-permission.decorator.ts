@@ -1,13 +1,20 @@
 import { SetMetadata } from '@nestjs/common';
 
-import type { VenuePermission } from '../constants/permissions';
+import type { VenuePermissionKey } from '../constants/permission-keys';
 
 export const REQUIRE_VENUE_PERMISSION_KEY = 'requireVenuePermission';
 
 /**
- * Require the current user to hold `permission` on the venue identified by the
- * mutation's `venueId` argument (resolved by `VenuePermissionGuard`).
- * SUPER_ADMIN bypasses; OWNER has every permission.
+ * Require the caller to hold `permission` at the venue named by the handler's
+ * `venueId` argument (or `input.venueId`), enforced by `VenuePermissionGuard`.
+ *
+ * Permissions are granted per user per venue in `staff_permissions` — there are
+ * no venue roles. Two principals bypass the check: platform super admins, and
+ * the venue's own owner.
+ *
+ * @example
+ * ＠RequireVenuePermission('venue.bookings.manage')
+ * async cancelBooking(＠Args('input') input: CancelBookingInput) {}
  */
-export const RequireVenuePermission = (permission: VenuePermission) =>
+export const RequireVenuePermission = (permission: VenuePermissionKey) =>
   SetMetadata(REQUIRE_VENUE_PERMISSION_KEY, permission);

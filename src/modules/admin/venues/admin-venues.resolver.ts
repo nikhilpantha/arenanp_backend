@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 import { StorageService } from '../../../storage/storage.service';
 
@@ -19,8 +16,7 @@ import {
 } from './dto/venue-action.inputs';
 
 @Resolver(() => AdminVenue)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('venues.view')
 export class AdminVenuesResolver {
   constructor(
     private readonly service: AdminVenuesService,
@@ -63,6 +59,7 @@ export class AdminVenuesResolver {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('venues.verify')
   @Mutation(() => AdminVenue, { name: 'adminApproveVenue' })
   approve(
     @Args('venueId', { type: () => ID }) venueId: string,
@@ -71,6 +68,7 @@ export class AdminVenuesResolver {
     return this.service.approve(venueId, actor);
   }
 
+  @RequirePermission('venues.reject')
   @Mutation(() => AdminVenue, { name: 'adminRejectVenue' })
   reject(
     @Args('input') input: RejectVenueInput,
@@ -79,6 +77,7 @@ export class AdminVenuesResolver {
     return this.service.reject(input, actor);
   }
 
+  @RequirePermission('venues.suspend')
   @Mutation(() => AdminVenue, { name: 'adminSuspendVenue' })
   suspend(
     @Args('input') input: SuspendVenueInput,
@@ -87,16 +86,19 @@ export class AdminVenuesResolver {
     return this.service.suspend(input, actor);
   }
 
+  @RequirePermission('venues.edit')
   @Mutation(() => AdminVenue, { name: 'adminFeatureVenue' })
   feature(@Args('venueId', { type: () => ID }) venueId: string): Promise<AdminVenue> {
     return this.service.setFeatured(venueId, true);
   }
 
+  @RequirePermission('venues.edit')
   @Mutation(() => AdminVenue, { name: 'adminUnfeatureVenue' })
   unfeature(@Args('venueId', { type: () => ID }) venueId: string): Promise<AdminVenue> {
     return this.service.setFeatured(venueId, false);
   }
 
+  @RequirePermission('venues.verify')
   @Mutation(() => AdminVenue, {
     name: 'adminUpdateVenueVerificationStatus',
     description: 'Generic verification-status setter; useful for bulk-status flows.',
@@ -111,8 +113,7 @@ export class AdminVenuesResolver {
 
 /** Presigns admin court image keys into download URLs wherever an AdminCourt is returned. */
 @Resolver(() => AdminCourt)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('venues.view')
 export class AdminCourtResolver {
   constructor(private readonly storage: StorageService) {}
 

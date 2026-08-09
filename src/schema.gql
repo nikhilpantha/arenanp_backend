@@ -647,10 +647,6 @@ enum CapabilityType {
   VENUE
 }
 
-input ChangeStaffRoleInput {
-  newRole: UserRole!
-}
-
 """A venue-owner block on bookings — one court or the whole venue."""
 type ClosureModel {
   """Blocked court; null = whole venue."""
@@ -837,8 +833,19 @@ input CreateSportInput {
 }
 
 input CreateStaffInput {
-  phoneNumber: String!
-  platformStaffRole: UserRole!
+  email: String!
+  fullName: String!
+
+  """Optional starting permissions. Can be left empty and granted later."""
+  permissionKeys: [String!]
+
+  """Venue or tournament id. Required unless scopeType is PLATFORM."""
+  scopeId: ID
+
+  """
+  Whether this admin runs the platform, a single venue, or a single tournament.
+  """
+  scopeType: PermissionScopeType!
 }
 
 input CreateSubscriptionInput {
@@ -940,11 +947,25 @@ enum DisputeStatus {
   RESOLVED
 }
 
-input GrantPermissionOverrideInput {
-  action: OverrideAction!
+type EffectivePermissionsObject {
+  """
+  Effective platform permission keys for the current user. `["*"]` means unrestricted (super admin).
+  """
+  permissions: [String!]!
+
+  """
+  Every scope the user holds grants in, platform and per venue/tournament.
+  """
+  scopes: [PermissionScopeObject!]!
+}
+
+input GrantStaffPermissionInput {
+  """Optional expiry for temporary access."""
   expiresAt: DateTime
-  permission: String!
+  permissionKey: String!
   reason: String
+  scope: PermissionScopeInput!
+  userId: ID!
 }
 
 """Pre-form check the public setup page calls to validate the token."""
@@ -1050,6 +1071,9 @@ input ListAdminTournamentsInput {
 }
 
 input ListAdminUsersInput {
+  """Include admins in the results. They are excluded by default."""
+  includeStaff: Boolean! = false
+
   """true = only active users, false = only suspended."""
   isActive: Boolean
 
@@ -1111,7 +1135,12 @@ input ListStaffInput {
   isActive: Boolean
   limit: Int
   offset: Int
-  role: UserRole
+
+  """Filter to admins of one venue or tournament."""
+  scopeId: ID
+
+  """Filter to admins of one scope type."""
+  scopeType: PermissionScopeType
 }
 
 type ListStaffOutput {
@@ -1439,7 +1468,6 @@ type Mutation {
   Cancel one of your own bookings (only before it reaches a terminal state).
   """
   cancelMyBooking(input: CancelMyBookingInput!): PlayerBookingModel!
-  changeStaffRole(input: ChangeStaffRoleInput!, userId: String!): StaffMember!
 
   """
   Complete a booking with add-on extras and final payment (writes a status event).
@@ -1491,7 +1519,9 @@ type Mutation {
 
   """Delete a venue offer."""
   deleteVenueOffer(offerId: ID!, venueId: ID!): OfferModel!
-  grantPermissionOverride(input: GrantPermissionOverrideInput!, userId: String!): String!
+
+  """Grant one permission to a staff member, optionally with an expiry."""
+  grantStaffPermission(input: GrantStaffPermissionInput!): StaffPermissionObject!
 
   """
   Email + password login. Used by admin / venue-management web panels. Mobile users use OTP.
@@ -1519,7 +1549,14 @@ type Mutation {
 
   """Send an OTP and ensure the VENUE (owner) role for this phone."""
   requestVenueOtp(input: RequestOtpInput!): OtpRequestResult!
-  revokePermissionOverride(permission: String!, userId: String!): String!
+
+  """Revoke one permission from a staff member."""
+  revokeStaffPermission(input: RevokeStaffPermissionInput!): Boolean!
+
+  """
+  Replace a staff member's permissions within one scope. Anything omitted from the list is revoked.
+  """
+  setStaffPermissions(input: SetStaffPermissionsInput!): [StaffPermissionObject!]!
 
   """Pause, resume, cancel or expire a subscription."""
   setSubscriptionStatus(input: SetSubscriptionStatusInput!): SubscriptionModel!
@@ -1534,6 +1571,9 @@ type Mutation {
   """
   setVenueServices(input: SetVenueServicesInput!): VenueModel!
 
+  """Set password for a new staff member using their setup token."""
+  setupPassword(input: SetupPasswordInput!): AuthPayload!
+
   """
   Sign the caller out by bumping their tokenVersion. Every previously-issued access token is rejected on the next request.
   """
@@ -1543,8 +1583,8 @@ type Mutation {
   Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. The VENUE capability is granted at signup and untouched here.
   """
   submitVenue(input: SubmitVenueInput!): VenueModel!
-  suspendStaff(userId: String!): String!
-  unsuspendStaff(userId: String!): String!
+  suspendStaff(userId: ID!): String!
+  unsuspendStaff(userId: ID!): String!
 
   """Update / activate / deactivate a membership plan."""
   updateMembershipPlan(input: UpdateMembershipPlanInput!): MembershipPlanModel!
@@ -1660,14 +1700,6 @@ type OtpRequestResult {
   True when this request granted a capability the account did not have yet.
   """
   roleAdded: Boolean
-}
-
-"""
-Platform staff permission override action: GRANT (add permission) or REVOKE (remove permission).
-"""
-enum OverrideAction {
-  GRANT
-  REVOKE
 }
 
 """Pagination metadata returned alongside list payloads."""
@@ -1788,6 +1820,44 @@ type PaymentsOverview {
   refundedTotal: Float!
   venuesOwed: Float!
   venuesSettled: Float!
+}
+
+"""
+Business area a permission belongs to: PLATFORM_ADMINISTRATION, VENUE_MANAGEMENT or TOURNAMENT_MANAGEMENT.
+"""
+enum PermissionDomain {
+  PLATFORM_ADMINISTRATION
+  TOURNAMENT_MANAGEMENT
+  VENUE_MANAGEMENT
+}
+
+type PermissionObject {
+  description: String
+  domain: PermissionDomain!
+  id: ID!
+  key: String!
+  name: String!
+}
+
+input PermissionScopeInput {
+  """Venue or tournament id. Omit for platform-wide permissions."""
+  scopeId: ID
+  scopeType: PermissionScopeType!
+}
+
+type PermissionScopeObject {
+  permissionCount: Int!
+  scopeId: String!
+  scopeType: PermissionScopeType!
+}
+
+"""
+What a permission grant applies to: PLATFORM (whole platform), VENUE (one venue) or TOURNAMENT (one tournament).
+"""
+enum PermissionScopeType {
+  PLATFORM
+  TOURNAMENT
+  VENUE
 }
 
 """
@@ -1988,7 +2058,10 @@ type Query {
 
   """Daily slot starts ("HH:mm") already held on a court over a date range."""
   courtTakenSlots(courtId: ID!, endDate: String!, startDate: String!): [String!]!
-  getStaffPermissions(userId: String!): StaffPermissions!
+  getStaffPermissions(scopeId: ID, scopeType: PermissionScopeType!, userId: ID!): StaffPermissionsView!
+
+  """The permission library, optionally filtered to one domain."""
+  listPermissions(domain: PermissionDomain): [PermissionObject!]!
   listStaff(input: ListStaffInput): ListStaffOutput!
 
   """Returns the currently authenticated user."""
@@ -2001,6 +2074,11 @@ type Query {
 
   """The signed-in player's bookings, most recent first."""
   myBookings(input: MyBookingsInput!): PaginatedPlayerBookings!
+
+  """
+  The caller's own platform permissions plus every scope they hold grants in. Drives what the admin UI renders.
+  """
+  myPermissions: EffectivePermissionsObject!
 
   """The signed-in player's memberships across venues."""
   mySubscriptions: [SubscriptionModel!]!
@@ -2016,8 +2094,16 @@ type Query {
   """Venues the signed-in user operates (any membership)."""
   myVenues: [VenueModel!]!
 
+  """
+  The permissions that may be granted in a scope — platform keys for PLATFORM, venue keys for VENUE, and so on.
+  """
+  permissionsForScope(scopeType: PermissionScopeType!): [PermissionObject!]!
+
   """Active sports in the platform catalogue, ordered for display."""
   sports: [SportModel!]!
+
+  """One staff member's grants, optionally narrowed to a single scope."""
+  staffPermissions(scope: PermissionScopeInput, userId: ID!): [StaffPermissionObject!]!
 
   """Public venue detail with its courts."""
   venue(venueId: ID!): VenueDetail!
@@ -2167,6 +2253,12 @@ type RevenueTrendPoint {
   revenue: Float!
 }
 
+input RevokeStaffPermissionInput {
+  permissionKey: String!
+  scope: PermissionScopeInput!
+  userId: ID!
+}
+
 input RevokeVenueInvitationInput {
   invitationId: ID!
 }
@@ -2176,6 +2268,13 @@ input SetBookingStatusInput {
   note: String
   status: BookingStatusAction!
   venueId: ID!
+}
+
+input SetStaffPermissionsInput {
+  """The complete set for this scope — anything omitted is revoked."""
+  permissionKeys: [String!]!
+  scope: PermissionScopeInput!
+  userId: ID!
 }
 
 input SetSubscriptionStatusInput {
@@ -2221,6 +2320,11 @@ enum SettlementStatus {
   PENDING
 }
 
+input SetupPasswordInput {
+  password: String!
+  token: String!
+}
+
 """Ascending / descending sort order."""
 enum SortOrder {
   ASC
@@ -2253,28 +2357,62 @@ type SportStub {
   slug: String!
 }
 
+type StaffAssignment {
+  """How many permissions they hold in this scope."""
+  permissionCount: Int!
+
+  """Venue or tournament id; empty string for platform admins."""
+  scopeId: String!
+
+  """Venue or tournament name, resolved for display."""
+  scopeName: String
+  scopeType: PermissionScopeType!
+  status: StaffStatus!
+}
+
 type StaffMember {
+  """Scopes this person administers, with a permission count for each."""
+  assignments: [StaffAssignment!]!
   createdAt: DateTime!
   email: String
   fullName: String
   id: String!
   isActive: Boolean!
-  overrideCount: Int!
   phoneNumber: String!
-  role: UserRole!
+  role: UserRole! @deprecated(reason: "Authorization comes from permission grants; this is only a staff marker.")
 }
 
-type StaffPermissionOverride {
-  action: OverrideAction!
+type StaffPermissionObject {
+  """Null means the grant never expires."""
   expiresAt: DateTime
-  permission: String!
+  grantedAt: DateTime!
+  grantedById: String!
+  id: ID!
+  permission: PermissionObject!
+  permissionKey: String!
   reason: String
+
+  """Venue or tournament id; empty string for platform-wide grants."""
+  scopeId: String!
+  scopeType: PermissionScopeType!
+  userId: String!
 }
 
-type StaffPermissions {
-  baseRole: UserRole!
-  overrides: [StaffPermissionOverride!]!
+type StaffPermissionsView {
+  """The individual grants."""
+  grants: [StaffPermissionObject!]!
+
+  """Effective permission keys. `["*"]` means unrestricted (super admin)."""
   permissions: [String!]!
+}
+
+"""
+Whether a staff assignment is ACTIVE, temporarily SUSPENDED, or INACTIVE (no longer with the organisation).
+"""
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
 }
 
 input SubmitVenueInput {
@@ -2547,10 +2685,13 @@ type User {
   fullName: String
   id: ID!
   isActive: Boolean!
+  isStaff: Boolean!
   lastLoginAt: DateTime
   organizerStatus: CapabilityStatus!
   phoneNumber: String!
   role: UserRole!
+  staffPermissions: [String!]
+  suspendedAt: DateTime
   updatedAt: DateTime!
   venueStatus: CapabilityStatus!
 }
@@ -2693,8 +2834,11 @@ enum VenueMemberRole {
 }
 
 type VenueMembershipModel {
+  """
+  Permissions held at this venue. `["*"]` means unrestricted (owner or super admin).
+  """
   permissions: [String!]!
-  role: VenueMemberRole!
+  role: VenueMemberRole! @deprecated(reason: "Display label only — authorization comes from `permissions`.")
   status: MembershipStatus!
   venueId: ID!
   venueName: String!

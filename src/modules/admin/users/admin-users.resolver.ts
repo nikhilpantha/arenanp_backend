@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 import { StorageService } from '../../../storage/storage.service';
 
@@ -15,8 +12,7 @@ import { PaginatedAdminUsers } from './dto/paginated-admin-users';
 import { UpdateUserRoleInput } from './dto/update-user-role.input';
 
 @Resolver(() => AdminUser)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('users.view')
 export class AdminUsersResolver {
   constructor(
     private readonly service: AdminUsersService,
@@ -48,6 +44,7 @@ export class AdminUsersResolver {
     return this.service.getUserDetail(id);
   }
 
+  @RequirePermission('users.suspend')
   @Mutation(() => AdminUser, {
     name: 'adminSuspendUser',
     description: 'Suspend a user (sets isActive=false).',
@@ -59,6 +56,7 @@ export class AdminUsersResolver {
     return this.service.setActive(id, false, actor);
   }
 
+  @RequirePermission('users.activate')
   @Mutation(() => AdminUser, {
     name: 'adminUnsuspendUser',
     description: 'Reactivate a previously suspended user (sets isActive=true).',
@@ -70,6 +68,7 @@ export class AdminUsersResolver {
     return this.service.setActive(id, true, actor);
   }
 
+  @RequirePermission('permissions.assign')
   @Mutation(() => AdminUser, {
     name: 'adminUpdateUserRole',
     description: 'Update a user’s platform role (USER / SUPER_ADMIN).',

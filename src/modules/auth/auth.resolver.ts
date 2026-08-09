@@ -1,10 +1,12 @@
-import { Args, Mutation, Resolver } from '@nestjs/graphql';
+import { Args, Mutation, Resolver, Context } from '@nestjs/graphql';
 import { CapabilityType } from '@prisma/client';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RequestOtpInput } from './dto/request-otp.input';
 import { VerifyOtpInput } from './dto/verify-otp.input';
 import { LoginWithEmailInput } from './dto/login-with-email.input';
 import { LoginWithPhoneInput } from './dto/login-with-phone.input';
+import { SetupPasswordInput } from './dto/setup-password.input';
 import { OtpRequestResult } from './dto/otp-request-result';
 import { AuthPayload } from './dto/auth-payload';
 import { Public } from '../../common/decorators/public.decorator';
@@ -48,8 +50,18 @@ export class AuthResolver {
   @Mutation(() => AuthPayload, {
     description: 'Verify an OTP and return an access token.',
   })
-  async verifyOtp(@Args('input') input: VerifyOtpInput): Promise<AuthPayload> {
+  async verifyOtp(
+    @Args('input') input: VerifyOtpInput,
+    @Context() context: { res: Response },
+  ): Promise<AuthPayload> {
     const { user, token } = await this.authService.verifyOtp(input.phoneNumber, input.code);
+
+    // Set HTTP-only cookie
+    context.res.setHeader(
+      'Set-Cookie',
+      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`,
+    );
+
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
@@ -63,8 +75,18 @@ export class AuthResolver {
     description:
       'Email + password login. Used by admin / venue-management web panels. Mobile users use OTP.',
   })
-  async loginWithEmail(@Args('input') input: LoginWithEmailInput): Promise<AuthPayload> {
+  async loginWithEmail(
+    @Args('input') input: LoginWithEmailInput,
+    @Context() context: { res: Response },
+  ): Promise<AuthPayload> {
     const { user, token } = await this.authService.loginWithEmail(input.email, input.password);
+
+    // Set HTTP-only cookie
+    context.res.setHeader(
+      'Set-Cookie',
+      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`,
+    );
+
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
@@ -78,11 +100,45 @@ export class AuthResolver {
     description:
       'Phone + password login (mobile). Only works after the phone has been verified via OTP once.',
   })
-  async loginWithPhone(@Args('input') input: LoginWithPhoneInput): Promise<AuthPayload> {
+  async loginWithPhone(
+    @Args('input') input: LoginWithPhoneInput,
+    @Context() context: { res: Response },
+  ): Promise<AuthPayload> {
     const { user, token } = await this.authService.loginWithPhonePassword(
       input.phoneNumber,
       input.password,
     );
+
+    // Set HTTP-only cookie
+    context.res.setHeader(
+      'Set-Cookie',
+      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`,
+    );
+
+    return {
+      accessToken: token.accessToken,
+      tokenType: token.tokenType,
+      expiresAt: token.expiresAt,
+      user: mapUserToGraphql(user),
+    };
+  }
+
+  @Public()
+  @Mutation(() => AuthPayload, {
+    description: 'Set password for a new staff member using their setup token.',
+  })
+  async setupPassword(
+    @Args('input') input: SetupPasswordInput,
+    @Context() context: { res: Response },
+  ): Promise<AuthPayload> {
+    const { user, token } = await this.authService.setupStaffPassword(input.token, input.password);
+
+    // Set HTTP-only cookie
+    context.res.setHeader(
+      'Set-Cookie',
+      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=900`,
+    );
+
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
@@ -95,8 +151,18 @@ export class AuthResolver {
     description:
       'Sign the caller out by bumping their tokenVersion. Every previously-issued access token is rejected on the next request.',
   })
-  async signOut(@CurrentUser() actor: AuthUser): Promise<boolean> {
+  async signOut(
+    @CurrentUser() actor: AuthUser,
+    @Context() context: { res: Response },
+  ): Promise<boolean> {
     await this.authService.invalidateSessions(actor.id);
+
+    // Clear the cookie
+    context.res.setHeader(
+      'Set-Cookie',
+      'accessToken=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0',
+    );
+
     return true;
   }
 }

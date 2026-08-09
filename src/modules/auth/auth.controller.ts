@@ -1,4 +1,5 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RequestOtpInput } from './dto/request-otp.input';
 import { VerifyOtpInput } from './dto/verify-otp.input';
@@ -26,8 +27,15 @@ export class AuthController {
   @Public()
   @Post('otp/verify')
   @HttpCode(HttpStatus.OK)
-  async verifyOtp(@Body() body: VerifyOtpInput) {
+  async verifyOtp(@Body() body: VerifyOtpInput, @Res({ passthrough: true }) response: Response) {
     const { user, token } = await this.authService.verifyOtp(body.phoneNumber, body.code);
+
+    // Set HTTP-only cookie
+    response.setHeader(
+      'Set-Cookie',
+      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`,
+    );
+
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
@@ -44,8 +52,18 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async loginWithEmail(@Body() body: LoginWithEmailInput) {
+  async loginWithEmail(
+    @Body() body: LoginWithEmailInput,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     const { user, token } = await this.authService.loginWithEmail(body.email, body.password);
+
+    // Set HTTP-only cookie
+    response.setHeader(
+      'Set-Cookie',
+      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`,
+    );
+
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,

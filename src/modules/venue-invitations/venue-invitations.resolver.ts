@@ -1,11 +1,8 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../common/types/auth-context';
 
 import { AuthPayload } from '../auth/dto/auth-payload';
@@ -32,8 +29,7 @@ export class VenueInvitationsResolver {
     name: 'adminListVenueInvitations',
     description: 'List pending (un-accepted) venue invitations.',
   })
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN)
+  @RequirePermission('venues.invite')
   list(): Promise<VenueInvitation[]> {
     return this.service.listPending();
   }
@@ -43,8 +39,7 @@ export class VenueInvitationsResolver {
     description:
       'Create a venue invitation, send the email, and return the resulting row. In dev (stub mailer) the setup URL is returned so admins can click straight through.',
   })
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN)
+  @RequirePermission('venues.invite')
   invite(
     @Args('input') input: InviteVenueInput,
     @CurrentUser() actor: AuthUser,
@@ -56,8 +51,7 @@ export class VenueInvitationsResolver {
     name: 'adminResendVenueInvitation',
     description: 'Rotate the token, push the expiry forward and resend the email.',
   })
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN)
+  @RequirePermission('venues.invite')
   resend(@Args('input') input: ResendVenueInvitationInput): Promise<CreateInvitationResult> {
     return this.service.resend(input);
   }
@@ -66,8 +60,7 @@ export class VenueInvitationsResolver {
     name: 'adminRevokeVenueInvitation',
     description: 'Delete a pending invitation so its link stops working.',
   })
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN)
+  @RequirePermission('venues.invite')
   revoke(@Args('input') input: RevokeVenueInvitationInput): Promise<boolean> {
     return this.service.revoke(input);
   }

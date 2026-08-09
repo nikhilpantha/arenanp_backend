@@ -22,7 +22,9 @@ const VENUE_INCLUDES = {
 } satisfies Prisma.VenueInclude;
 
 const MEMBERSHIP_INCLUDES = {
-  venue: { select: { name: true, verificationStatus: true } },
+  // primaryOwnerId is needed to grant the owner an implicit wildcard, matching
+  // VenuePermissionGuard.
+  venue: { select: { name: true, verificationStatus: true, primaryOwnerId: true } },
 } satisfies Prisma.VenueMembershipInclude;
 
 /**

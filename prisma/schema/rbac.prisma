@@ -1,0 +1,80 @@
+// ─── Permissions ────────────────────────────────────────────────────────────
+// There are no roles. Every staff member is an admin of one scope — platform,
+// a venue, or a tournament — and their capabilities are granted to them
+// individually from the permission library below.
+//
+//   SystemStaff / VenueStaff / OrganizerStaff  →  "is this person an admin here"
+//   StaffPermission                            →  "what may they do here"
+//
+// Grants are scoped, so the same person can hold different permissions at two
+// different venues.
+
+/// Permission domain — organises the library by business area, and determines
+/// which scope a permission may be granted in.
+enum PermissionDomain {
+  PLATFORM_ADMINISTRATION
+  VENUE_MANAGEMENT
+  TOURNAMENT_MANAGEMENT
+}
+
+/// The scope a grant applies to.
+enum PermissionScopeType {
+  /// Platform-wide. `scopeId` is the empty string.
+  PLATFORM
+  /// A single venue. `scopeId` is the venue id.
+  VENUE
+  /// A single tournament. `scopeId` is the tournament id.
+  TOURNAMENT
+}
+
+/// Every permission that exists, seeded from the catalog in
+/// `src/common/constants/permission-keys.ts`. Rows are reference data: the
+/// seeder owns them, admins only ever grant and revoke them.
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique /// e.g. "users.view", "venue.bookings.cancel"
+  name        String           /// Human-readable: "View Users"
+  description String? /// What this permission allows
+  domain      PermissionDomain
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  grants StaffPermission[]
+
+  @@index([domain])
+  @@map("permissions")
+}
+
+/// One permission granted to one staff member within one scope.
+///
+/// `scopeId` is deliberately non-nullable with an empty-string default: a
+/// nullable column would break the unique constraint for platform grants,
+/// because Postgres treats NULLs as distinct.
+///
+/// Revocation is a hard delete — absence of a row means absence of the
+/// permission. `revokedAt` history lives in the audit log, not here.
+model StaffPermission {
+  id            String              @id @default(cuid())
+  userId        String
+  user          User                @relation("StaffPermissions", fields: [userId], references: [id], onDelete: Cascade)
+  permissionKey String
+  permission    Permission          @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  scopeType     PermissionScopeType
+  /// Venue or tournament id; empty string for platform-wide grants.
+  scopeId       String              @default("")
+
+  /// Optional expiry for temporary access. Null = permanent.
+  expiresAt     DateTime?
+  /// Why this was granted — surfaced in the audit trail.
+  reason        String?
+
+  grantedById   String
+  grantedAt     DateTime            @default(now())
+
+  @@unique([userId, permissionKey, scopeType, scopeId])
+  @@index([userId, scopeType, scopeId])
+  @@index([permissionKey])
+  @@index([expiresAt])
+  @@map("staff_permissions")
+}

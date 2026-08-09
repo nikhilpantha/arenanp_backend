@@ -24,7 +24,7 @@ export class OffersResolver {
     description: 'All offers for a venue (management view), paginated.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('offers:manage')
+  @RequireVenuePermission('venue.offers.manage')
   venueOffers(@Args('input') input: ListVenueOffersInput): Promise<PaginatedOffers> {
     return this.service.listVenueOffers(input);
   }
@@ -34,7 +34,7 @@ export class OffersResolver {
     description: 'Create a venue offer / promo code.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('offers:manage')
+  @RequireVenuePermission('venue.offers.manage')
   createOffer(@Args('input') input: CreateOfferInput): Promise<OfferModel> {
     return this.service.create(input);
   }
@@ -44,14 +44,14 @@ export class OffersResolver {
     description: 'Update / activate / deactivate an offer.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('offers:manage')
+  @RequireVenuePermission('venue.offers.manage')
   updateOffer(@Args('input') input: UpdateOfferInput): Promise<OfferModel> {
     return this.service.update(input);
   }
 
   @Mutation(() => OfferModel, { name: 'deleteVenueOffer', description: 'Delete a venue offer.' })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('offers:manage')
+  @RequireVenuePermission('venue.offers.manage')
   deleteVenueOffer(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('offerId', { type: () => ID }) offerId: string,
@@ -64,7 +64,7 @@ export class OffersResolver {
     description: "A subject's loyalty progress toward a free game (by customer or phone).",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('bookings:read')
+  @RequireVenuePermission('venue.bookings.view')
   venueLoyaltyStatus(@Args('input') input: LoyaltyStatusInput): Promise<LoyaltyStatusModel> {
     return this.service.getLoyaltyStatus(input);
   }

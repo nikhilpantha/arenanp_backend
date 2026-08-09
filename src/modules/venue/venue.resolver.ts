@@ -83,7 +83,7 @@ export class VenueResolver {
     description: 'Update editable venue profile fields. Requires the venue:edit permission.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue:edit')
+  @RequireVenuePermission('venue.edit')
   updateVenueProfile(@Args('input') input: UpdateVenueProfileInput): Promise<VenueModel> {
     return this.service.updateProfile(input);
   }
@@ -93,7 +93,7 @@ export class VenueResolver {
     description: "Replace the venue's sports + courts. Requires the venue:edit permission.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue:edit')
+  @RequireVenuePermission('venue.edit')
   setVenueServices(@Args('input') input: SetVenueServicesInput): Promise<VenueModel> {
     return this.service.setServices(input);
   }

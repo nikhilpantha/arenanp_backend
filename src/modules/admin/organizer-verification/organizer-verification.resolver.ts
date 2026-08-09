@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 import { StorageService } from '../../../storage/storage.service';
 
@@ -19,8 +16,7 @@ import {
 } from './dto/reject-organizer-verification.input';
 
 @Resolver(() => OrganizerVerificationRequestModel)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('organizers.view')
 export class OrganizerVerificationResolver {
   constructor(
     private readonly service: OrganizerVerificationService,
@@ -52,6 +48,7 @@ export class OrganizerVerificationResolver {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('organizers.verify')
   @Mutation(() => OrganizerVerificationRequestModel, {
     name: 'adminApproveOrganizerVerification',
     description: 'Approve a pending organizer-verification request.',
@@ -63,6 +60,7 @@ export class OrganizerVerificationResolver {
     return this.service.approve(input, actor);
   }
 
+  @RequirePermission('organizers.reject')
   @Mutation(() => OrganizerVerificationRequestModel, {
     name: 'adminRejectOrganizerVerification',
     description: 'Reject a pending organizer-verification request with a reason.',
@@ -74,6 +72,7 @@ export class OrganizerVerificationResolver {
     return this.service.reject(input, actor);
   }
 
+  @RequirePermission('organizers.suspend')
   @Mutation(() => AdminUser, {
     name: 'adminSuspendOrganizerAccess',
     description: 'Suspend organizer access on a user (organizerStatus -> SUSPENDED).',
@@ -85,6 +84,7 @@ export class OrganizerVerificationResolver {
     return this.service.suspendAccess(userId, actor);
   }
 
+  @RequirePermission('organizers.activate')
   @Mutation(() => AdminUser, {
     name: 'adminReinstateOrganizerAccess',
     description: 'Reinstate organizer access on a previously-suspended user.',

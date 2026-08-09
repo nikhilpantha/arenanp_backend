@@ -197,6 +197,52 @@ export class AuthService {
    * rejected by JwtStrategy on its next request. Called on sign-out and on
    * admin actions that should kill existing sessions (suspend, demote, etc).
    */
+  async setupStaffPassword(
+    token: string,
+    password: string,
+  ): Promise<{ user: User; token: SignedAccessToken }> {
+    // Find user by setup token
+    const user = await this.prisma.user.findUnique({
+      where: { setupToken: token },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired setup token.');
+    }
+
+    // Check if token has expired
+    if (user.setupTokenExpiry && user.setupTokenExpiry < new Date()) {
+      throw new BadRequestException('Setup token has expired.');
+    }
+
+    // Check if token was already used
+    if (user.setupTokenUsedAt) {
+      throw new BadRequestException('Setup token has already been used.');
+    }
+
+    // Hash the password
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+
+    // Update user: set password, mark token as used, bump tokenVersion
+    const updatedUser = await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        setupToken: null,
+        setupTokenUsedAt: new Date(),
+        tokenVersion: { increment: 1 }, // Ensure any old tokens are invalid
+      },
+    });
+
+    // Sign and return access token
+    const accessToken = await this.signAccessToken(updatedUser);
+
+    return {
+      user: updatedUser,
+      token: accessToken,
+    };
+  }
+
   async invalidateSessions(userId: string): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },

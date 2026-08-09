@@ -5,6 +5,7 @@ import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard
 import { ClosuresRepository } from './closures.repository';
 import { ClosuresResolver } from './closures.resolver';
 import { ClosuresService } from './closures.service';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Venue closures / time blocks. Owners block a single court or the whole venue for
@@ -13,6 +14,7 @@ import { ClosuresService } from './closures.service';
  * so the booking and discovery flows can run it without importing this module.
  */
 @Module({
+  imports: [RbacModule],
   providers: [ClosuresResolver, ClosuresService, ClosuresRepository, VenuePermissionGuard],
 })
 export class ClosuresModule {}

@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 
 import { AdminSettingsService } from './admin-settings.service';
@@ -12,8 +9,7 @@ import { PlatformSettings } from './dto/platform-settings.model';
 import { UpdatePlatformSettingsInput } from './dto/update-platform-settings.input';
 
 @Resolver(() => PlatformSettings)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('settings.view')
 export class AdminSettingsResolver {
   constructor(private readonly service: AdminSettingsService) {}
 
@@ -25,6 +21,7 @@ export class AdminSettingsResolver {
     return this.service.get();
   }
 
+  @RequirePermission('settings.edit')
   @Mutation(() => PlatformSettings, {
     name: 'adminUpdatePlatformSettings',
     description:

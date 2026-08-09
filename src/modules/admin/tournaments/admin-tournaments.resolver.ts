@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 
 import { AdminTournamentsService } from './admin-tournaments.service';
@@ -20,8 +17,7 @@ import {
 } from './dto/tournament-action.inputs';
 
 @Resolver(() => AdminTournament)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('tournaments.view')
 export class AdminTournamentsResolver {
   constructor(private readonly service: AdminTournamentsService) {}
 
@@ -45,6 +41,7 @@ export class AdminTournamentsResolver {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('tournaments.edit')
   @Mutation(() => AdminTournament, { name: 'adminApproveTournament' })
   approve(
     @Args('input') input: ApproveTournamentInput,
@@ -53,6 +50,7 @@ export class AdminTournamentsResolver {
     return this.service.approve(input, actor);
   }
 
+  @RequirePermission('tournaments.cancel')
   @Mutation(() => AdminTournament, { name: 'adminSuspendTournament' })
   suspend(
     @Args('input') input: SuspendTournamentInput,
@@ -61,6 +59,7 @@ export class AdminTournamentsResolver {
     return this.service.suspend(input, actor);
   }
 
+  @RequirePermission('tournaments.cancel')
   @Mutation(() => AdminTournament, { name: 'adminCancelTournament' })
   cancel(
     @Args('input') input: CancelTournamentInput,
@@ -69,6 +68,7 @@ export class AdminTournamentsResolver {
     return this.service.cancel(input, actor);
   }
 
+  @RequirePermission('tournaments.edit')
   @Mutation(() => AdminTournament, { name: 'adminUpdateTournamentVisibility' })
   updateVisibility(
     @Args('input') input: UpdateTournamentVisibilityInput,
@@ -76,6 +76,7 @@ export class AdminTournamentsResolver {
     return this.service.updateVisibility(input);
   }
 
+  @RequirePermission('tournaments.edit')
   @Mutation(() => AdminTournament, {
     name: 'adminUpdateTournamentStatus',
     description: 'Generic status setter. Requires a reason when moving to SUSPENDED / CANCELLED.',

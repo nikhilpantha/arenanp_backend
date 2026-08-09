@@ -30,9 +30,10 @@ enum CapabilityStatus {
   SUSPENDED
 }
 
-/// A user's role *within a single venue* (venue-scoped RBAC). OWNER is the venue
-/// asset's owner; the rest are staff tiers. Default permissions per role are
-/// resolved in code (ROLE_PERMISSIONS), with per-membership overrides allowed.
+/// A staff member's job title within a single venue — a display label only.
+/// It grants nothing: venue permissions are granted per user per venue in
+/// `staff_permissions`. OWNER is the exception, and only because the venue's
+/// `primaryOwnerId` carries an implicit wildcard in VenuePermissionGuard.
 enum VenueMemberRole {
   OWNER
   MANAGER
@@ -46,12 +47,6 @@ enum MembershipStatus {
   INVITED
   ACTIVE
   SUSPENDED
-}
-
-/// Override action for platform staff permission grants/revokes.
-enum OverrideAction {
-  GRANT
-  REVOKE
 }
 
 /// Base account. Holds only auth + common fields; every role's specific data
@@ -74,16 +69,29 @@ model User {
   /// claim doesn't match the current value is rejected by JwtStrategy.
   tokenVersion Int       @default(1)
   lastLoginAt  DateTime?
+  isStaff      Boolean   @default(false)
+  suspendedAt  DateTime?
+
+  /// Staff account setup: token sent via email, expires in 24h
+  setupToken        String?   @unique @map("setuptoken")
+  setupTokenExpiry  DateTime? @map("setuptokenexpiry")
+  setupTokenUsedAt  DateTime? @map("setuptokenusedat")
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  // Staff assignments (isolated from regular user)
+  systemStaff      SystemStaff?
+  venueStaff       VenueStaff[]  @relation("VenueStaff")
+  organizerStaff   OrganizerStaff[] @relation("OrganizerStaff")
 
   // Layer 2 — capabilities (status gates)
   capabilities UserCapability[]
 
-  // Layer 1 — platform staff permissions (overrides)
-  permissionOverrides PermissionOverride[]
-  roleGrants          StaffRoleGrant[] @relation("StaffRoleGrants")
-  roleGrantsGiven     StaffRoleGrant[] @relation("StaffRoleGranter")
+  // Layer 1 — permissions granted to this staff member, per scope.
+  // There are no roles; see prisma/schema/rbac.prisma.
+  staffPermissions StaffPermission[] @relation("StaffPermissions")
+
 
   // Role profiles (1:1)
   playerProfile    PlayerProfile?
@@ -287,59 +295,3 @@ model VenueVerificationRequest {
   @@map("venue_verification_requests")
 }
 
-/// Platform staff permission override (grant or revoke a permission from the role default).
-/// Used for temporary access grants (with expiresAt) or role-specific exceptions.
-model PermissionOverride {
-  id          String         @id @default(cuid())
-  userId      String
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  permission  String         /// e.g. "finance:read", "moderation:verify:venue"
-  action      OverrideAction /// GRANT or REVOKE
-  grantedById String         /// Who granted/revoked this permission
-  grantedAt   DateTime       @default(now())
-  expiresAt   DateTime?      /// Optional expiry for temporary grants
-  reason      String?        /// Audit: why was this granted/revoked?
-  deletedAt   DateTime?      /// Soft-delete timestamp (null = active)
-
-  @@unique([userId, permission])
-  @@index([userId, expiresAt])
-  @@index([grantedById])
-  @@index([deletedAt])
-  @@map("permission_overrides")
-}
-
-/// Time-limited role grants for temporary promotions/access.
-/// Example: Grant MODERATOR role to a SUPPORT_AGENT for 1 month.
-/// Expires automatically; must have explicit expiry (no permanent grants).
-model StaffRoleGrant {
-  id        String   @id @default(cuid())
-
-  /// User receiving the temporary role
-  userId    String
-  user      User     @relation("StaffRoleGrants", fields: [userId], references: [id], onDelete: Cascade)
-
-  /// Role being granted (e.g., MODERATOR, ADMIN)
-  role      UserRole
-
-  /// Who granted this role
-  grantedBy String
-  granterUser User   @relation("StaffRoleGranter", fields: [grantedBy], references: [id], onDelete: Restrict)
-
-  /// When the role was granted
-  grantedAt DateTime @default(now())
-
-  /// When the grant expires (MUST have expiry - no permanent grants)
-  expiresAt DateTime
-
-  /// Why the role was granted
-  reason    String?
-
-  /// Status: ACTIVE (current) | EXPIRED (past expiryAt) | REVOKED (manually revoked)
-  status    String   @default("ACTIVE")
-
-  @@unique([userId, role])
-  @@index([userId, status])
-  @@index([expiresAt])
-  @@index([grantedBy])
-  @@map("staff_role_grants")
-}

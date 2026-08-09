@@ -11,6 +11,8 @@ async function main() {
 
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
 
+  // `isStaff` is what the admin panel gates on — without it this account can
+  // authenticate but cannot open the panel.
   const admin = await prisma.user.upsert({
     where: { phoneNumber: phone },
     update: {
@@ -19,6 +21,7 @@ async function main() {
       email,
       passwordHash,
       isActive: true,
+      isStaff: true,
     },
     create: {
       phoneNumber: phone,
@@ -26,7 +29,16 @@ async function main() {
       email,
       passwordHash,
       role: UserRole.SUPER_ADMIN,
+      isActive: true,
+      isStaff: true,
     },
+  });
+
+  // The super admin is a platform staff member; make sure the marker row exists.
+  await prisma.systemStaff.upsert({
+    where: { userId: admin.id },
+    update: { status: 'ACTIVE' },
+    create: { userId: admin.id, createdBy: admin.id, status: 'ACTIVE' },
   });
 
   console.log(`Seeded SUPER_ADMIN:`);

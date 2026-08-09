@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 import { StorageService } from '../../../storage/storage.service';
 
@@ -19,8 +16,7 @@ import {
 } from './dto/venue-verification.inputs';
 
 @Resolver(() => VenueVerificationRequestModel)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('venues.view')
 export class VenueVerificationResolver {
   constructor(
     private readonly service: VenueVerificationService,
@@ -52,6 +48,7 @@ export class VenueVerificationResolver {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('venues.verify')
   @Mutation(() => VenueVerificationRequestModel, {
     name: 'adminApproveVenueVerification',
     description: 'Approve a pending venue-verification request.',
@@ -63,6 +60,7 @@ export class VenueVerificationResolver {
     return this.service.approve(input, actor);
   }
 
+  @RequirePermission('venues.reject')
   @Mutation(() => VenueVerificationRequestModel, {
     name: 'adminRejectVenueVerification',
     description: 'Reject a pending venue-verification request with a reason.',
@@ -74,6 +72,7 @@ export class VenueVerificationResolver {
     return this.service.reject(input, actor);
   }
 
+  @RequirePermission('venues.suspend')
   @Mutation(() => AdminUser, {
     name: 'adminSuspendVenueAccess',
     description: 'Suspend venue access on a user (venueStatus -> SUSPENDED).',
@@ -85,6 +84,7 @@ export class VenueVerificationResolver {
     return this.service.suspendAccess(userId, actor);
   }
 
+  @RequirePermission('venues.activate')
   @Mutation(() => AdminUser, {
     name: 'adminReinstateVenueAccess',
     description: 'Reinstate venue access on a previously-suspended user.',

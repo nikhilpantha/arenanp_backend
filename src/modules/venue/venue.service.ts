@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Sport } from '@prisma/client';
 
+import { WILDCARD_PERMISSION } from '../../common/constants/permission-keys';
+import { PermissionResolverService } from '../rbac/permission-resolver.service';
 import { StorageService } from '../../storage/storage.service';
 import { VenueRepository } from './venue.repository';
 import { mapMembershipToGraphql, VenueMembershipModel } from './dto/venue-membership.model';
@@ -16,6 +18,7 @@ export class VenueService {
   constructor(
     private readonly repo: VenueRepository,
     private readonly storage: StorageService,
+    private readonly permissions: PermissionResolverService,
   ) {}
 
   async myVenues(userId: string): Promise<VenueModel[]> {
@@ -29,9 +32,24 @@ export class VenueService {
     return mapVenueToGraphql(venue);
   }
 
+  /**
+   * The caller's venue seats, each with the permissions they actually hold
+   * there. Owners get the wildcard, matching `VenuePermissionGuard` — the app
+   * must not show a narrower panel set than the API will accept.
+   */
   async myMemberships(userId: string): Promise<VenueMembershipModel[]> {
     const rows = await this.repo.findMyMemberships(userId);
-    return rows.map(mapMembershipToGraphql);
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const isOwner = row.venue.primaryOwnerId === userId;
+        const permissions = isOwner
+          ? [WILDCARD_PERMISSION]
+          : await this.permissions.getVenueUserPermissions(userId, row.venueId);
+
+        return mapMembershipToGraphql(row, permissions);
+      }),
+    );
   }
 
   async submitVenue(userId: string, input: SubmitVenueInput): Promise<VenueModel> {

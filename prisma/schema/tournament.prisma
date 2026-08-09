@@ -82,8 +82,9 @@ model Tournament {
   closedBy   User?     @relation("UserTournamentsClosed", fields: [closedById], references: [id], onDelete: SetNull)
   closedAt   DateTime?
 
-  registrations TournamentRegistration[]
-  matches       Match[]
+  registrations     TournamentRegistration[]
+  staff             OrganizerStaff[]  // Tournament-level staff
+  matches           Match[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

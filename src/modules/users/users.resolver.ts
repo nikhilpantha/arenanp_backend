@@ -5,12 +5,14 @@ import { UpdateProfileInput } from './dto/update-profile.input';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/types/auth-context';
 import { StorageService } from '../../storage/storage.service';
+import { PermissionResolverService } from '../rbac/permission-resolver.service';
 
 @Resolver(() => User)
 export class UsersResolver {
   constructor(
     private readonly usersService: UsersService,
     private readonly storage: StorageService,
+    private readonly permissions: PermissionResolverService,
   ) {}
 
   /** Presign the stored avatar object key into a temporary download URL on read. */
@@ -22,7 +24,15 @@ export class UsersResolver {
   @Query(() => User, { description: 'Returns the currently authenticated user.' })
   async me(@CurrentUser() current: AuthUser): Promise<User> {
     const user = await this.usersService.findById(current.id);
-    return mapUserToGraphql(user);
+
+    // Staff permissions are resolved fresh from their grants, so a permission
+    // change lands on the next `me` without a re-login.
+    const isStaff = user.isStaff;
+    const staffPermissions = isStaff
+      ? await this.permissions.getUserPermissions(user.id)
+      : undefined;
+
+    return mapUserToGraphql({ ...user, isStaff, staffPermissions });
   }
 
   @Mutation(() => User, { description: 'Update the current user profile (name / email / avatar).' })

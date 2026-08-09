@@ -14,10 +14,12 @@ import {
   OfferAudience,
   OfferDiscountType,
   OfferTrigger,
-  OverrideAction,
   PaymentProvider,
   PaymentStatus,
+  PermissionDomain,
+  PermissionScopeType,
   RefundStatus,
+  StaffStatus,
   SettlementStatus,
   SubscriptionStatus,
   TournamentRegistrationStatus,
@@ -167,10 +169,22 @@ registerEnumType(SubscriptionStatus, {
     "A subscription's lifecycle: ACTIVE -> (PAUSED) -> EXPIRED, with CANCELLED as a terminal sink.",
 });
 
-registerEnumType(OverrideAction, {
-  name: 'OverrideAction',
+registerEnumType(PermissionDomain, {
+  name: 'PermissionDomain',
   description:
-    'Platform staff permission override action: GRANT (add permission) or REVOKE (remove permission).',
+    'Business area a permission belongs to: PLATFORM_ADMINISTRATION, VENUE_MANAGEMENT or TOURNAMENT_MANAGEMENT.',
+});
+
+registerEnumType(StaffStatus, {
+  name: 'StaffStatus',
+  description:
+    'Whether a staff assignment is ACTIVE, temporarily SUSPENDED, or INACTIVE (no longer with the organisation).',
+});
+
+registerEnumType(PermissionScopeType, {
+  name: 'PermissionScopeType',
+  description:
+    'What a permission grant applies to: PLATFORM (whole platform), VENUE (one venue) or TOURNAMENT (one tournament).',
 });
 
 export {
@@ -188,10 +202,12 @@ export {
   OfferAudience,
   OfferDiscountType,
   OfferTrigger,
-  OverrideAction,
   PaymentProvider,
   PaymentStatus,
+  PermissionDomain,
+  PermissionScopeType,
   RefundStatus,
+  StaffStatus,
   SettlementStatus,
   SubscriptionStatus,
   TournamentRegistrationStatus,

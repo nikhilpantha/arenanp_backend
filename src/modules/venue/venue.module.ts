@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
+import { RbacModule } from '../rbac/rbac.module';
 
 import { VenueRepository } from './venue.repository';
 import { VenueCourtResolver, VenueResolver } from './venue.resolver';
@@ -12,6 +13,7 @@ import { VenueService } from './venue.service';
  * memberships, and (with venue:edit) manage the profile + services.
  */
 @Module({
+  imports: [RbacModule],
   providers: [
     VenueResolver,
     VenueCourtResolver,
