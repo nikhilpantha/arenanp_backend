@@ -32,7 +32,10 @@ export const envValidationSchema = Joi.object({
 
   // JWT
   JWT_ACCESS_SECRET: Joi.string().min(32).required(),
-  JWT_ACCESS_TTL: Joi.string().default('7d'),
+  JWT_ACCESS_TTL: Joi.string().default('15m'),
+  REFRESH_INACTIVITY_DAYS: Joi.number().min(1).max(365).default(7),
+  REFRESH_COOKIE_NAME: Joi.string().default('arenanp_refresh'),
+  REFRESH_COOKIE_DOMAIN: Joi.string().allow('').default(''),
 
   // OTP
   OTP_LENGTH: Joi.number().integer().min(4).max(8).default(6),
@@ -45,9 +48,12 @@ export const envValidationSchema = Joi.object({
   SMS_API_KEY: Joi.string().allow('').default(''),
   SMS_SENDER_ID: Joi.string().default('ArenaNP'),
 
-  // Throttling
+  // Throttling. The `auth` pair is deliberately much tighter: it guards
+  // password and OTP endpoints against brute force, not ordinary traffic.
   THROTTLE_TTL: Joi.number().integer().min(1).default(60),
   THROTTLE_LIMIT: Joi.number().integer().min(1).default(120),
+  THROTTLE_AUTH_TTL: Joi.number().integer().min(1).default(300),
+  THROTTLE_AUTH_LIMIT: Joi.number().integer().min(1).default(10),
 
   // GraphQL
   GRAPHQL_INTROSPECTION: Joi.boolean().truthy('true').falsy('false').default(true),

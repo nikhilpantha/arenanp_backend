@@ -6,16 +6,21 @@ import { phoneKey } from '../../common/utils/phone.util';
 
 import type { CreateOfferInput, ListVenueOffersInput, UpdateOfferInput } from './dto/offer.inputs';
 
-/** Where-clause for offers that are active and within their validity window right now. */
+/**
+ * Where-clause for offers that are active and within their validity window right
+ * now. A null `validUntil` is open-ended — live until the owner switches it off.
+ */
 function activeWindow(now: Date): Prisma.OfferWhereInput {
-  return { isActive: true, validFrom: { lte: now }, validUntil: { gte: now } };
+  return {
+    isActive: true,
+    validFrom: { lte: now },
+    OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+  };
 }
 
 /** A loyalty subject — exactly one identity is set (customer, user, or phone). */
 export type LoyaltySubject =
-  | { customerId: string }
-  | { venueId: string; userId: string }
-  | { venueId: string; phone: string };
+  { customerId: string } | { venueId: string; userId: string } | { venueId: string; phone: string };
 
 function subjectWhere(subject: LoyaltySubject): Prisma.BookingWhereInput {
   if ('customerId' in subject) return { customerId: subject.customerId };
@@ -129,7 +134,7 @@ export class OffersRepository {
         everyGames: input.everyGames ?? null,
         code: input.code ? input.code.toUpperCase() : null,
         validFrom: input.validFrom,
-        validUntil: input.validUntil,
+        validUntil: input.validUntil ?? null,
         usageLimit: input.usageLimit ?? null,
       },
     });

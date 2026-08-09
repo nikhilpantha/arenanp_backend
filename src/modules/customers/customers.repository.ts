@@ -35,7 +35,12 @@ export function normalizeName(name: string): string {
 }
 
 function activeWindow(now: Date): Prisma.OfferWhereInput {
-  return { isActive: true, validFrom: { lte: now }, validUntil: { gte: now } };
+  return {
+    isActive: true,
+    validFrom: { lte: now },
+    // Null validUntil = open-ended: live until the owner switches it off.
+    OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+  };
 }
 
 @Injectable()
@@ -156,13 +161,19 @@ export class CustomersRepository {
     return this.prisma.customer.findFirst({ where: { id: customerId, venueId } });
   }
 
-  /** A customer's bookings (most recent first) for the detail screen's history. */
-  customerBookings(venueId: string, customerId: string) {
+  /**
+   * A customer's bookings, most recent first, one page at a time — the detail
+   * screen lists every game individually and a regular can have hundreds, so
+   * the caller pages instead of taking a fixed slice. Total count comes from
+   * the insights aggregate, which already scans the whole history.
+   */
+  customerBookings(venueId: string, customerId: string, limit: number, offset: number) {
     return this.prisma.booking.findMany({
       where: { venueId, customerId },
       include: { court: { include: { sport: true } }, extras: true },
       orderBy: { startAt: 'desc' },
-      take: 50,
+      take: limit,
+      skip: offset,
     });
   }
 

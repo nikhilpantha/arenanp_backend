@@ -1,10 +1,10 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
-import { Response } from 'express';
+import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RequestOtpInput } from './dto/request-otp.input';
 import { VerifyOtpInput } from './dto/verify-otp.input';
 import { LoginWithEmailInput } from './dto/login-with-email.input';
 import { Public } from '../../common/decorators/public.decorator';
+import { ThrottleAuth } from '../../common/decorators/throttle-auth.decorator';
 
 /**
  * Thin REST surface for auth.
@@ -14,6 +14,9 @@ import { Public } from '../../common/decorators/public.decorator';
  *  - Quick smoke testing from cURL / health probes that can't speak GraphQL.
  */
 @Controller('auth')
+// Every route here takes a credential, so the tight limiter applies to all of
+// them — this surface must not be a rate-limit bypass for the GraphQL one.
+@ThrottleAuth()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -27,19 +30,17 @@ export class AuthController {
   @Public()
   @Post('otp/verify')
   @HttpCode(HttpStatus.OK)
-  async verifyOtp(@Body() body: VerifyOtpInput, @Res({ passthrough: true }) response: Response) {
+  async verifyOtp(@Body() body: VerifyOtpInput) {
     const { user, token } = await this.authService.verifyOtp(body.phoneNumber, body.code);
-
-    // Set HTTP-only cookie
-    response.setHeader(
-      'Set-Cookie',
-      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`,
-    );
-
+    const refresh = await this.authService.openSession(user);
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
       expiresAt: token.expiresAt,
+      // No cookie on this surface: it exists for cURL and integrations, which have
+      // nowhere to keep one. Browsers use the GraphQL mutations, which do set it.
+      refreshToken: refresh.token,
+      refreshExpiresAt: refresh.expiresAt,
       user: {
         id: user.id,
         phoneNumber: user.phoneNumber,
@@ -52,22 +53,15 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async loginWithEmail(
-    @Body() body: LoginWithEmailInput,
-    @Res({ passthrough: true }) response: Response,
-  ) {
+  async loginWithEmail(@Body() body: LoginWithEmailInput) {
     const { user, token } = await this.authService.loginWithEmail(body.email, body.password);
-
-    // Set HTTP-only cookie
-    response.setHeader(
-      'Set-Cookie',
-      `accessToken=${token.accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`,
-    );
-
+    const refresh = await this.authService.openSession(user);
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
       expiresAt: token.expiresAt,
+      refreshToken: refresh.token,
+      refreshExpiresAt: refresh.expiresAt,
       user: {
         id: user.id,
         email: user.email,

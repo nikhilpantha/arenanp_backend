@@ -42,8 +42,15 @@ export class BookingService {
     return rows.map(mapBookingToGraphql);
   }
 
-  summary(venueId: string): Promise<VenueBookingSummary> {
-    return this.repo.summary(venueId);
+  /**
+   * `withMoney` reflects the caller's `finance:read`. The repository always
+   * computes the figure (it's one aggregate in a transaction the other counts
+   * already need), and it is dropped here rather than branched on in SQL —
+   * one code path, and the omission is visible at the boundary that decides it.
+   */
+  async summary(venueId: string, withMoney: boolean): Promise<VenueBookingSummary> {
+    const { revenueToday, ...counts } = await this.repo.summary(venueId);
+    return withMoney ? { ...counts, revenueToday } : counts;
   }
 
   async getOne(venueId: string, bookingId: string): Promise<BookingModel> {
@@ -93,8 +100,8 @@ export class BookingService {
     return mapBookingToGraphql(await this.repo.complete(input, actorId));
   }
 
-  async recordPayment(input: RecordBookingPaymentInput): Promise<BookingModel> {
-    return mapBookingToGraphql(await this.repo.recordPayment(input));
+  async recordPayment(input: RecordBookingPaymentInput, actorId?: string): Promise<BookingModel> {
+    return mapBookingToGraphql(await this.repo.recordPayment(input, actorId));
   }
 
   // ─── Player-facing ──────────────────────────────────────────────────────────

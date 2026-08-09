@@ -7,24 +7,34 @@ import {
   VenueVerificationStatus,
 } from '@prisma/client';
 
+import { effectivePermissions } from '../../common/constants/permissions';
 import { PrismaService } from '../../database/prisma.service';
 
 import type {
   SetVenueServicesInput,
   SubmitVenueInput,
   UpdateVenueProfileInput,
+  VenueCourtInput,
+  VenueServiceInput,
 } from './dto/venue.inputs';
-import type { VenueWithRelations } from './dto/venue.model';
+import type { CourtWithSport, VenueWithRelations } from './dto/venue.model';
+import { uniqueVenueSlug } from './venue-slug';
+
+const COURT_INCLUDES = {
+  sport: true,
+  // Drives the console's "you can switch this off, but not delete it" guard.
+  // A court's bookings cascade on delete, so the count is the difference
+  // between hiding a court and erasing what it earned.
+  _count: { select: { bookings: true } },
+} satisfies Prisma.CourtInclude;
 
 const VENUE_INCLUDES = {
-  courts: { include: { sport: true }, orderBy: { createdAt: 'asc' } },
+  courts: { include: COURT_INCLUDES, orderBy: { createdAt: 'asc' } },
   venueSports: { include: { sport: true }, orderBy: { sport: { displayOrder: 'asc' } } },
 } satisfies Prisma.VenueInclude;
 
 const MEMBERSHIP_INCLUDES = {
-  // primaryOwnerId is needed to grant the owner an implicit wildcard, matching
-  // VenuePermissionGuard.
-  venue: { select: { name: true, verificationStatus: true, primaryOwnerId: true } },
+  venue: { select: { name: true, verificationStatus: true } },
 } satisfies Prisma.VenueMembershipInclude;
 
 /**
@@ -35,13 +45,7 @@ const MEMBERSHIP_INCLUDES = {
  */
 function courtsForService(
   sport: Sport,
-  svc: {
-    courts?: { name?: string; slotMinutes: number; pricePerHour: number }[];
-    courtCount: number;
-    slotMinutes: number;
-    pricePerHour?: number;
-    features: string[];
-  },
+  svc: VenueServiceInput,
 ): Prisma.CourtCreateManyVenueInput[] {
   if (svc.courts?.length) {
     const many = svc.courts.length > 1;
@@ -50,7 +54,15 @@ function courtsForService(
       sportId: sport.id,
       pricePerHour: c.pricePerHour,
       slotMinutes: c.slotMinutes,
-      features: svc.features,
+      // Per-court features win; the service-level array is the deprecated
+      // fallback for clients that predate per-court attributes.
+      features: c.features?.length ? c.features : svc.features,
+      surface: c.surface ?? null,
+      format: c.format ?? null,
+      environment: c.environment ?? null,
+      capacity: c.capacity ?? null,
+      description: c.description ?? null,
+      imageUrls: c.imageUrls ?? [],
     }));
   }
 
@@ -63,6 +75,27 @@ function courtsForService(
     slotMinutes: svc.slotMinutes,
     features: svc.features,
   }));
+}
+
+/** One court row from the wizard's court shape, with its name already resolved. */
+export function courtRow(
+  sport: Sport,
+  court: VenueCourtInput,
+  name: string,
+): Prisma.CourtCreateManyVenueInput {
+  return {
+    name,
+    sportId: sport.id,
+    pricePerHour: court.pricePerHour,
+    slotMinutes: court.slotMinutes,
+    features: court.features ?? [],
+    surface: court.surface ?? null,
+    format: court.format ?? null,
+    environment: court.environment ?? null,
+    capacity: court.capacity ?? null,
+    description: court.description ?? null,
+    imageUrls: court.imageUrls ?? [],
+  };
 }
 
 function additionalServicesJson(items: { name: string; price?: number }[]): Prisma.InputJsonValue {
@@ -78,21 +111,38 @@ export class VenueRepository {
     return this.prisma.sport.findMany({ where: { slug: { in: slugs } } });
   }
 
-  /** Venues the user is a member of. */
+  /**
+   * Venues the user can currently work at.
+   *
+   * `status: ACTIVE` is the whole point: a suspended or removed staff member
+   * must stop seeing the venue immediately, and every guarded mutation already
+   * enforces exactly this (`VenuePermissionGuard`). Without it here, the two
+   * disagree — the console would keep listing a venue whose every action fails.
+   */
   findMyVenues(userId: string): Promise<VenueWithRelations[]> {
     return this.prisma.venue.findMany({
-      where: { memberships: { some: { userId } } },
+      where: { memberships: { some: { userId, status: MembershipStatus.ACTIVE } } },
       include: VENUE_INCLUDES,
       orderBy: { createdAt: 'asc' },
     });
   }
 
-  /** A single venue the user is a member of (or null). */
+  /** A single venue the user is an ACTIVE member of (or null). */
   findMyVenue(venueId: string, userId: string): Promise<VenueWithRelations | null> {
     return this.prisma.venue.findFirst({
-      where: { id: venueId, memberships: { some: { userId } } },
+      where: { id: venueId, memberships: { some: { userId, status: MembershipStatus.ACTIVE } } },
       include: VENUE_INCLUDES,
     });
+  }
+
+  /** The caller's effective permissions at one venue, or null if not an active member. */
+  async myPermissions(venueId: string, userId: string): Promise<string[] | null> {
+    const membership = await this.prisma.venueMembership.findUnique({
+      where: { venueId_userId: { venueId, userId } },
+      select: { role: true, permissions: true, status: true },
+    });
+    if (!membership || membership.status !== MembershipStatus.ACTIVE) return null;
+    return effectivePermissions(membership.role, membership.permissions);
   }
 
   findById(venueId: string): Promise<VenueWithRelations | null> {
@@ -123,10 +173,17 @@ export class VenueRepository {
     sportsBySlug: Map<string, Sport>,
   ): Promise<VenueWithRelations> {
     return this.prisma.$transaction(async (tx) => {
+      // Minted here and never again — staff login emails embed it.
+      const slug = await uniqueVenueSlug(
+        input.name,
+        async (candidate) => (await tx.venue.count({ where: { slug: candidate } })) > 0,
+      );
+
       const venue = await tx.venue.create({
         data: {
           primaryOwnerId: userId,
           name: input.name,
+          slug,
           description: input.description ?? null,
           address: input.address,
           city: input.city ?? null,
@@ -135,6 +192,7 @@ export class VenueRepository {
           coverImageUrl: input.coverImageUrl ?? null,
           imageUrls: input.imageUrls,
           documentUrls: input.verification?.documentUrls ?? [],
+          amenities: input.amenities ?? [],
           additionalServices: additionalServicesJson(input.additionalServices),
           openTime: input.openTime ?? '06:00',
           closeTime: input.closeTime ?? '22:00',
@@ -164,7 +222,13 @@ export class VenueRepository {
     });
   }
 
-  /** Patch editable venue profile fields. */
+  /**
+   * Patch editable venue profile fields.
+   *
+   * `slug` is deliberately absent and must stay that way: staff login emails
+   * embed it, so re-deriving it from a renamed venue would break every staff
+   * account here with no error anyone could trace back to the rename.
+   */
   async updateProfile(input: UpdateVenueProfileInput): Promise<VenueWithRelations> {
     const { venueId, additionalServices, ...rest } = input;
     const data: Prisma.VenueUpdateInput = {};
@@ -180,6 +244,7 @@ export class VenueRepository {
     if (rest.closeTime !== undefined) data.closeTime = rest.closeTime;
     if (rest.contactEmail !== undefined) data.contactEmail = rest.contactEmail;
     if (rest.contactPhone !== undefined) data.contactPhone = rest.contactPhone;
+    if (rest.amenities !== undefined) data.amenities = rest.amenities;
     if (additionalServices !== undefined) {
       data.additionalServices = additionalServicesJson(additionalServices);
     }
@@ -210,6 +275,89 @@ export class VenueRepository {
         ),
       });
       return tx.venue.findUniqueOrThrow({ where: { id: input.venueId }, include: VENUE_INCLUDES });
+    });
+  }
+
+  // ── One court at a time ───────────────────────────────────────────────────
+  // Everything below edits a single Court row and leaves its id alone, which is
+  // the whole point: `Booking.courtId` and `Subscription.courtId` cascade on
+  // delete, so the wholesale replace above can never be the way an owner
+  // changes a price.
+
+  /** One court, scoped to its venue so a member of venue A can't touch venue B's. */
+  findCourt(venueId: string, courtId: string): Promise<CourtWithSport | null> {
+    return this.prisma.court.findFirst({
+      where: { id: courtId, venueId },
+      include: COURT_INCLUDES,
+    });
+  }
+
+  /** Patch one court in place. Bookings keep their FK and their money snapshot. */
+  updateCourt(courtId: string, data: Prisma.CourtUpdateInput): Promise<CourtWithSport> {
+    return this.prisma.court.update({
+      where: { id: courtId },
+      data,
+      include: COURT_INCLUDES,
+    });
+  }
+
+  /**
+   * Add one court, and the VenueSport row if this is the venue's first court in
+   * that sport — without it the marketplace filters would never surface the
+   * venue for the sport it just started offering.
+   */
+  async addCourt(
+    venueId: string,
+    sport: Sport,
+    court: Prisma.CourtCreateManyVenueInput,
+  ): Promise<VenueWithRelations> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.venueSport.createMany({
+        data: [{ venueId, sportId: sport.id }],
+        skipDuplicates: true,
+      });
+      await tx.court.create({ data: { ...court, venueId } });
+      return tx.venue.findUniqueOrThrow({ where: { id: venueId }, include: VENUE_INCLUDES });
+    });
+  }
+
+  /** Subscriptions cascade too, so removal has to check them alongside bookings. */
+  /** Everything across the venue that would die with its courts. */
+  countVenueDependents(venueId: string): Promise<{ bookings: number; subscriptions: number }> {
+    return this.prisma
+      .$transaction([
+        this.prisma.booking.count({ where: { venueId } }),
+        this.prisma.subscription.count({ where: { venueId } }),
+      ])
+      .then(([bookings, subscriptions]) => ({ bookings, subscriptions }));
+  }
+
+  countCourtDependents(courtId: string): Promise<{ bookings: number; subscriptions: number }> {
+    return this.prisma
+      .$transaction([
+        this.prisma.booking.count({ where: { courtId } }),
+        this.prisma.subscription.count({ where: { courtId } }),
+      ])
+      .then(([bookings, subscriptions]) => ({ bookings, subscriptions }));
+  }
+
+  /**
+   * Delete one court, dropping the sport from the venue when it was the last
+   * court hosting it. Only ever reached for a court with no bookings and no
+   * subscriptions — the service checks that first.
+   */
+  async deleteCourt(
+    venueId: string,
+    courtId: string,
+    sportId: string,
+  ): Promise<VenueWithRelations> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.court.delete({ where: { id: courtId } });
+      const remaining = await tx.court.count({ where: { venueId, sportId } });
+      if (remaining === 0) {
+        await tx.venueSport.deleteMany({ where: { venueId, sportId } });
+      }
+      return tx.venue.findUniqueOrThrow({ where: { id: venueId }, include: VENUE_INCLUDES });
     });
   }
 }

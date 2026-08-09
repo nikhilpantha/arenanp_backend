@@ -53,32 +53,43 @@ enum MembershipStatus {
 /// lives in its own table (player_profiles, organizer_profiles, venues).
 /// Capabilities (PLAYER / VENUE / ORGANIZER / COACH) live in `user_capabilities`.
 model User {
-  id           String    @id @default(cuid())
-  fullName     String?
-  phoneNumber  String    @unique
-  email        String?   @unique
-  passwordHash String?
-  role         UserRole  @default(USER)
-  avatarUrl    String?
-  isActive     Boolean   @default(true)
+  id              String    @id @default(cuid())
+  fullName        String?
+  phoneNumber     String    @unique
+  email           String?   @unique
+  passwordHash    String?
+  /// Forces a password change before the account can do anything else.
+  ///
+  /// Set when someone OTHER than the account holder chose the password — a
+  /// venue owner minting a staff login, or resetting one. Until the holder
+  /// picks their own, `PasswordChangeGuard` refuses every authenticated call
+  /// except reading `me` and changing the password. Without it the owner keeps
+  /// working credentials for a seat that is supposed to be someone else's, and
+  /// the audit trail those seats exist to produce means nothing.
+  mustChangePassword Boolean @default(false)
+  role            UserRole  @default(USER)
+  avatarUrl       String?
+  isActive        Boolean   @default(true)
   /// Set on the first successful OTP verification. Password login is only
   /// allowed once the phone has been verified at least once.
   phoneVerifiedAt DateTime?
-  /// Monotonically increasing counter embedded in JWTs. Sign-out, suspend and
-  /// role/capability changes bump this so any previously-issued token whose
-  /// claim doesn't match the current value is rejected by JwtStrategy.
-  tokenVersion Int       @default(1)
-  lastLoginAt  DateTime?
-  isStaff      Boolean   @default(false)
-  suspendedAt  DateTime?
+  /// Monotonically increasing counter embedded in JWTs. Bumped by the things that
+  /// must end EVERY session at once — password reset, suspend, role/capability
+  /// changes — so any previously-issued token whose claim doesn't match is
+  /// rejected by JwtStrategy. Signing out of one device does NOT bump this; it
+  /// revokes that device's refresh token instead (see RefreshToken).
+  tokenVersion    Int       @default(1)
+  lastLoginAt     DateTime?
+  isStaff         Boolean   @default(false)
+  suspendedAt     DateTime?
 
   /// Staff account setup: token sent via email, expires in 24h
   setupToken        String?   @unique @map("setuptoken")
   setupTokenExpiry  DateTime? @map("setuptokenexpiry")
   setupTokenUsedAt  DateTime? @map("setuptokenusedat")
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Staff assignments (isolated from regular user)
   systemStaff      SystemStaff?
@@ -92,6 +103,8 @@ model User {
   // There are no roles; see prisma/schema/rbac.prisma.
   staffPermissions StaffPermission[] @relation("StaffPermissions")
 
+  /// One row per signed-in device, kept alive by activity (see RefreshToken).
+  refreshTokens RefreshToken[]
 
   // Role profiles (1:1)
   playerProfile    PlayerProfile?
@@ -133,6 +146,9 @@ model User {
   tournamentsReviewed              Tournament[]             @relation("UserTournamentsReviewed")
   tournamentsClosed                Tournament[]             @relation("UserTournamentsClosed")
   tournamentRegistrationsCaptained TournamentRegistration[] @relation("UserTournamentRegistrations")
+  tournamentPlayerProfiles         TournamentPlayer[]       @relation("UserTournamentPlayerProfiles")
+  matchEventsRecorded              MatchEvent[]             @relation("UserMatchEventsRecorded")
+  matchDelegations                 MatchDelegate[]          @relation("UserMatchDelegations")
 
   platformSettingsUpdated  PlatformSetting[] @relation("UserPlatformSettingsUpdated")
   venueInvitationsCreated  VenueInvitation[] @relation("UserVenueInvitationsCreated")
@@ -140,8 +156,60 @@ model User {
   sportsCreated            Sport[]           @relation("UserSportsCreated")
   venueClosuresCreated     VenueClosure[]    @relation("UserVenueClosuresCreated")
 
+  expensesCreated     Expense[]            @relation("UserExpensesCreated")
+  cashReconciliations CashReconciliation[] @relation("UserCashClosed")
+  bookingPaymentsTaken BookingPayment[]    @relation("UserBookingPaymentsTaken")
+
   @@index([role])
   @@map("users")
+}
+
+/// One signed-in device, kept alive by use.
+///
+/// Access tokens are deliberately short-lived (minutes); this is what lets a
+/// client mint the next one without asking for a password again. Two properties
+/// make that safe:
+///
+/// 1. **Sliding expiry.** Every refresh pushes `expiresAt` out by the inactivity
+///    window (REFRESH_INACTIVITY_DAYS, 7 by default). Keep using Arena NP and you
+///    stay signed in forever; go quiet for a week and the session dies on its own.
+/// 2. **Rotation with reuse detection.** A refresh consumes the presented token
+///    and issues a new one, both stamped with the same `familyId`. Presenting a
+///    token that has already been rotated means it was copied, so the entire
+///    family is revoked — the thief and the victim both get logged out, which is
+///    the only safe response to a leak we can detect.
+///
+/// The raw token is never stored, only its SHA-256, so a dump of this table can't
+/// be replayed as a login.
+model RefreshToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 (hex) of the opaque token the client holds.
+  tokenHash String @unique
+  /// All rotations of one login share this, so reuse detection can kill the chain.
+  familyId  String
+
+  /// Slides forward on every use; past this, the client must sign in again.
+  expiresAt DateTime
+  /// Set when this token is rotated away, signed out, or killed by reuse detection.
+  revokedAt DateTime?
+  /// Why it was revoked — "rotated", "signed out", "reuse detected".
+  revokedReason String?
+  /// When it was last exchanged, i.e. the last sign of life from this device.
+  lastUsedAt DateTime?
+
+  /// Rough device fingerprint, for a future "your sessions" screen. Never trusted.
+  userAgent String?
+  ip        String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }
 
 /// Layer 2 — a single capability grant for a user. One row per (user, type).
@@ -183,17 +251,29 @@ model PlayerProfile {
 /// capability is requested; the living record once approved (the verification
 /// request stays as the immutable application + audit trail).
 model OrganizerProfile {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   businessName String?
   contactEmail String?
   contactPhone String?
   city         String?
   bio          String?
   experience   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  // Public-facing "professional" identity — filled in by the organizer after
+  // approval via the edit-profile screen (not part of the KYC application).
+  logoUrl            String? // Organization logo (S3 object key)
+  bannerUrl          String? // Organization banner / cover (S3 object key)
+  website            String?
+  facebookUrl        String?
+  instagramUrl       String?
+  tiktokUrl          String?
+  youtubeUrl         String?
+  termsAndConditions String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("organizer_profiles")
 }
@@ -211,6 +291,26 @@ model VenueMembership {
   /// Fine-grained permission overrides on top of the role's defaults.
   permissions String[]         @default([])
   status      MembershipStatus @default(ACTIVE)
+
+  /// True when the venue minted this person's login (`name@<venue-slug>.arenanp.com`)
+  /// rather than attaching an account they already had.
+  ///
+  /// It decides three things the seat alone can't: how the staff list explains
+  /// the way they sign in, whether the owner may reset their password (never,
+  /// for someone's personal account), and whether removing the seat should also
+  /// deactivate the login — a provisioned account with no seats left has no
+  /// remaining purpose, while a personal account obviously does.
+  provisionedUser Boolean @default(false)
+
+  /// What this person is paid, and on what basis. Both null for anyone not on
+  /// a wage — a one-off helper still gets payments recorded, just with nothing
+  /// expected. A raise overwrites the rate; what was actually PAID is
+  /// preserved in the expense ledger, which is the record that matters.
+  payBasis PayBasis?
+  payRate  Decimal?  @db.Decimal(10, 2)
+
+  /// Salary payments made against this seat.
+  salaryPayments Expense[]
 
   invitedById String?
   invitedBy   User?   @relation("UserVenueMembershipsInvited", fields: [invitedById], references: [id], onDelete: SetNull)

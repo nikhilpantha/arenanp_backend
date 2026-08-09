@@ -1,4 +1,6 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/types/auth-context';
@@ -39,9 +41,15 @@ export class StorageResolver {
     name: 'mediaUrl',
     nullable: true,
     description:
-      'Resolve a stored object key into a fresh presigned download URL (e.g. to refresh an expired one).',
+      'Resolve a stored object key into a fresh presigned download URL (e.g. to refresh an expired one). Private categories (KYC documents) resolve only for the uploader.',
   })
-  mediaUrl(@Args('key') key: string): Promise<string | null> {
+  async mediaUrl(@Args('key') key: string, @CurrentUser() user: AuthUser): Promise<string | null> {
+    // Any authenticated caller can hand this query any key, so the key itself
+    // cannot be the access control. Public display assets stay open; private
+    // documents answer only to whoever uploaded them.
+    if (!this.storage.canResolveKey(key, user.id, user.role === UserRole.SUPER_ADMIN)) {
+      throw new ForbiddenException('You do not have access to this file.');
+    }
     return this.storage.getDownloadUrl(key);
   }
 }

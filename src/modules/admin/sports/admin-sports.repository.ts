@@ -2,7 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 
-const SPORT_INCLUDES = { createdBy: true } satisfies Prisma.SportInclude;
+/**
+ * `_count` rides along on every read so the admin list can show where a sport is
+ * used — and so the deactivate dialog can warn honestly — without an N+1.
+ */
+const SPORT_INCLUDES = {
+  createdBy: true,
+  _count: { select: { courts: true, tournaments: true, venueSports: true } },
+} satisfies Prisma.SportInclude;
 
 export type SportWithRelations = Prisma.SportGetPayload<{
   include: typeof SPORT_INCLUDES;
@@ -28,31 +35,13 @@ export class AdminSportsRepository {
     });
   }
 
-  create(args: {
-    slug: string;
-    name: string;
-    iconUrl?: string | null;
-    description?: string | null;
-    features: string[];
-    slotDurations: number[];
-    displayOrder: number;
-    isActive: boolean;
-    createdById: string;
-  }): Promise<SportWithRelations> {
-    return this.prisma.sport.create({
-      data: {
-        slug: args.slug,
-        name: args.name,
-        iconUrl: args.iconUrl ?? null,
-        description: args.description ?? null,
-        features: args.features,
-        slotDurations: args.slotDurations,
-        displayOrder: args.displayOrder,
-        isActive: args.isActive,
-        createdById: args.createdById,
-      },
-      include: SPORT_INCLUDES,
-    });
+  /**
+   * Takes the Prisma input directly — the catalogue carries twenty-odd fields
+   * now, and restating each one here only adds a place for them to drift.
+   * Normalisation and validation happen in the service before this is called.
+   */
+  create(data: Prisma.SportUncheckedCreateInput): Promise<SportWithRelations> {
+    return this.prisma.sport.create({ data, include: SPORT_INCLUDES });
   }
 
   update(args: { id: string; data: Prisma.SportUpdateInput }): Promise<SportWithRelations> {

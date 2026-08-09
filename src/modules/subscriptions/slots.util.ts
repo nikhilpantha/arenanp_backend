@@ -41,6 +41,24 @@ export function normaliseWindows(windows: string[]): string[] {
   });
 }
 
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+/**
+ * Validate + normalise a plan's weekday keys: lowercase, deduped, week order.
+ * Hold-matching does `daysOfWeek.includes(nepalWeekday(...))` with these exact
+ * lowercase keys, so anything else stored here would silently never match.
+ */
+export function normaliseDays(days: string[] | undefined | null): string[] {
+  if (!days || days.length === 0) return [];
+  const wanted = new Set(days.map((d) => d.trim().toLowerCase()));
+  for (const day of wanted) {
+    if (!DAY_KEYS.includes(day)) {
+      throw new BadRequestException(`Invalid weekday "${day}" (expected sun..sat).`);
+    }
+  }
+  return DAY_KEYS.filter((d) => wanted.has(d));
+}
+
 /** Parse stored "HH:mm-HH:mm" bands into numeric windows. */
 export function parseWindows(windows: string[]): TimeWindow[] {
   return windows.map((w) => {

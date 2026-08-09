@@ -1,0 +1,158 @@
+// ─── Venue finance: payments taken, expenses, cash reconciliation ───────────
+//
+// Booking *income* is not modelled as a balance here — it is derived live from
+// bookings, subscription payments and settlements (see the `finance` module's
+// aggregation queries). What these models add is everything those rails can't
+// reconstruct: when each payment was actually taken, operating costs (for net
+// profit), and the end-of-day cash count.
+
+/// One payment taken against a booking — the money-movement ledger.
+///
+/// `Booking.amountPaid` is a running total that is OVERWRITTEN on every update,
+/// so on its own it can say a booking has Rs 500 against it but never when that
+/// was collected, in how many instalments, or by whom. Since a booking can be
+/// part-paid and settled later, those are real events an owner (and an auditor)
+/// needs itemised. Each row here is one such event; `amountPaid` stays as the
+/// cached sum so existing booking queries are untouched.
+///
+/// `venueId` is denormalised so venue-scoped finance and transaction queries can
+/// filter and page without joining through bookings.
+model BookingPayment {
+  id String @id @default(cuid())
+
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  amount Decimal          @db.Decimal(10, 2)
+  method PaymentProvider?
+
+  /// When the money changed hands. Reports bucket by this, not createdAt.
+  takenAt DateTime @default(now())
+
+  takenById String?
+  takenBy   User?   @relation("UserBookingPaymentsTaken", fields: [takenById], references: [id], onDelete: SetNull)
+
+  /// Set on rows synthesised from a booking's pre-ledger `amountPaid`, whose real
+  /// collection time was never recorded. Keeps a back-filled opening balance from
+  /// being read as a payment genuinely taken at that timestamp.
+  backfilled Boolean @default(false)
+
+  note String?
+
+  createdAt DateTime @default(now())
+
+  @@index([venueId, takenAt])
+  @@index([bookingId])
+  @@map("booking_payments")
+}
+
+/// How a staff member's pay is reckoned.
+///
+/// MONTHLY is the only basis whose "due" the system can work out on its own.
+/// DAILY and PER_SESSION need a count of days worked or sessions run, which
+/// nothing here records — so the owner enters it when they settle up, and the
+/// rate does the arithmetic. That is deliberate: inventing an attendance
+/// system to make a number look automatic would be a much larger feature and
+/// a much less honest one.
+enum PayBasis {
+  MONTHLY
+  DAILY
+  PER_SESSION
+}
+
+/// Operating-cost categories an owner tracks against a venue.
+enum ExpenseCategory {
+  RENT
+  SALARY
+  UTILITIES
+  EQUIPMENT
+  MAINTENANCE
+  MARKETING
+  SUPPLIES
+  TAX
+  OTHER
+}
+
+/// A single operating expense booked against a venue. `incurredAt` is the date the
+/// cost applies to (owner-picked) — finance reports bucket by it, not by createdAt,
+/// so back-dating last month's rent lands in the right period. `paymentMethod` reuses
+/// the shared PaymentProvider enum so cash-out can feed cash reconciliation.
+model Expense {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  category    ExpenseCategory @default(OTHER)
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("NPR")
+  description String?
+  vendor      String?
+
+  paymentMethod PaymentProvider?
+  incurredAt    DateTime
+
+  /// ─── Salary ───────────────────────────────────────────────────────────
+  /// A salary payment is just an expense with a person and a period attached.
+  ///
+  /// Modelling it that way rather than as its own table is what keeps profit
+  /// honest for free: `netProfit`, the trend chart, the category breakdown,
+  /// the transaction ledger, the cash-day close and the CSV export all read
+  /// `expenses` already, and none of them had to change. A separate table
+  /// would have had to be added to six aggregations, and forgetting one would
+  /// silently overstate profit.
+  ///
+  /// SetNull rather than Cascade: sacking someone must never delete what the
+  /// venue actually paid out.
+  staffMembershipId String?
+  staffMembership   VenueMembership? @relation(fields: [staffMembershipId], references: [id], onDelete: SetNull)
+  /// Snapshot of who was paid, so the row still reads as a person after the
+  /// seat is gone. Same denormalisation as `Booking.customerName`.
+  payeeName         String?
+  /// First day of the pay period this settles (a month, for MONTHLY staff).
+  salaryPeriodStart DateTime?        @db.Date
+  /// Days worked or sessions run, for DAILY / PER_SESSION. Null for MONTHLY.
+  salaryQuantity    Decimal?         @db.Decimal(10, 2)
+
+  createdById String?
+  createdBy   User?   @relation("UserExpensesCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId, incurredAt])
+  @@index([venueId, category])
+  @@index([staffMembershipId, salaryPeriodStart])
+  @@map("expenses")
+}
+
+/// End-of-day cash count ("day close") for a venue. At close, the system snapshots
+/// `expectedCash` (opening float + cash collected − cash paid out that Nepal business
+/// day) and records the physical `countedCash`; `variance = counted − expected` flags
+/// drawer discrepancies. One close per venue per business day.
+model CashReconciliation {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  businessDate DateTime @db.Date
+
+  openingFloat Decimal @default(0) @db.Decimal(10, 2)
+  expectedCash Decimal @db.Decimal(10, 2)
+  countedCash  Decimal @db.Decimal(10, 2)
+  variance     Decimal @db.Decimal(10, 2)
+  notes        String?
+
+  closedById String?
+  closedBy   User?    @relation("UserCashClosed", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt   DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([venueId, businessDate])
+  @@index([venueId])
+  @@map("cash_reconciliations")
+}

@@ -10,6 +10,25 @@ enum VenueVerificationStatus {
   SUSPENDED
 }
 
+/// How a sport is sold, which decides the unit an owner types a price in during
+/// venue setup. `Court.pricePerHour` stays the canonical stored rate — this only
+/// governs entry and display, so a cricket ground can be listed per day and a
+/// pool per person without a second price column.
+enum SportPricingUnit {
+  PER_HOUR
+  PER_SLOT
+  PER_SESSION
+  PER_DAY
+  PER_PERSON_SLOT
+}
+
+/// Whether one booking takes the whole surface (a futsal court) or a surface
+/// sells N places per slot (a pool lane, a skating session).
+enum SportBookingMode {
+  EXCLUSIVE
+  CAPACITY
+}
+
 /// A physical venue. `ownedVenues` relation links the primary owner (billing /
 /// canonical contact); operational access is governed by VenueMembership.
 /// `verificationStatus` is the per-listing admin moderation gate.
@@ -19,6 +38,12 @@ model Venue {
   primaryOwner   User   @relation("UserOwnedVenues", fields: [primaryOwnerId], references: [id], onDelete: Cascade)
 
   name        String
+  /// URL-safe handle derived from `name` at creation, unique platform-wide.
+  ///
+  /// IMMUTABLE. Staff login emails embed it (`ram@<slug>.arenanp.com`), so
+  /// regenerating it on a rename would silently break every staff account at
+  /// this venue with no traceable error. `updateProfile` must never touch it.
+  slug        String @unique
   description String?
 
   address   String?
@@ -31,7 +56,7 @@ model Venue {
   imageUrls     String[] @default([])
   documentUrls  String[] @default([])
 
-  amenities String[] @default([])
+  amenities          String[] @default([])
   /// Extra paid/free services, e.g. [{ "name": "Bib rental", "price": 50 }].
   additionalServices Json?
 
@@ -52,19 +77,22 @@ model Venue {
   reviewer     User?     @relation("UserVenuesReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
   reviewedAt   DateTime?
 
-  memberships VenueMembership[]
-  staff       VenueStaff[]  // Platform-level venue staff
-  courts      Court[]
-  bookings    Booking[]
-  settlements Settlement[]
-  tournaments Tournament[]
-  matches     Match[]
-  venueSports VenueSport[]
-  offers      Offer[]
-  customers   Customer[]
-  membershipPlans MembershipPlan[]
-  subscriptions   Subscription[]
-  closures        VenueClosure[]
+  memberships         VenueMembership[]
+  courts              Court[]
+  bookings            Booking[]
+  settlements         Settlement[]
+  tournaments         Tournament[]
+  matches             Match[]
+  venueSports         VenueSport[]
+  offers              Offer[]
+  customers           Customer[]
+  membershipPlans     MembershipPlan[]
+  subscriptions       Subscription[]
+  closures            VenueClosure[]
+  expenses            Expense[]
+  cashReconciliations CashReconciliation[]
+  bookingPayments     BookingPayment[]
+  staff               VenueStaff[] // Platform-assigned venue staff
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -74,6 +102,14 @@ model Venue {
   @@index([isFeatured])
   @@index([primaryOwnerId])
   @@map("venues")
+}
+
+/// Whether a court is indoor, open-air, or netted/roofed without walls — a
+/// per-court fact (monsoon decides bookings), never a sport-level chip.
+enum CourtEnvironment {
+  INDOOR
+  OUTDOOR
+  ROOFED
 }
 
 /// A bookable surface within a venue (court / ground / pitch). Pricing and
@@ -86,15 +122,22 @@ model Court {
 
   name         String
   sportId      String
-  sport        Sport    @relation(fields: [sportId], references: [id], onDelete: Restrict)
-  pricePerHour Decimal  @db.Decimal(10, 2)
+  sport        Sport             @relation(fields: [sportId], references: [id], onDelete: Restrict)
+  pricePerHour Decimal           @db.Decimal(10, 2)
   /// Slot length in minutes (e.g. 60). Drives slot generation for bookings.
-  slotMinutes  Int      @default(60)
-  /// Surface features, e.g. ["Indoor", "Floodlights"].
-  features     String[] @default([])
+  slotMinutes  Int               @default(60)
+  /// Per-court features from `Sport.courtFeatures`, e.g. ["Floodlights"].
+  features     String[]          @default([])
+  /// One of `Sport.surfaces` — "Wooden Floor" vs "Cement" changes the price.
+  surface      String?
+  /// One of `Sport.formats` — "5-a-side" vs "7-a-side" changes the headcount.
+  format       String?
+  environment  CourtEnvironment?
+  /// Places per slot, for CAPACITY sports (a pool lane, a public skate).
+  capacity     Int?
   description  String?
-  isActive     Boolean  @default(true)
-  imageUrls    String[] @default([])
+  isActive     Boolean           @default(true)
+  imageUrls    String[]          @default([])
 
   bookings      Booking[]
   matches       Match[]
@@ -152,20 +195,61 @@ model Sport {
   description  String?
   displayOrder Int     @default(0)
   isActive     Boolean @default(true)
-  /// Amenity presets an owner can toggle when offering this sport (e.g.
-  /// ["Indoor", "Floodlights", "5-a-side"]). Admin-managed; the app shows these
-  /// as selectable chips during venue setup.
-  features     String[] @default([])
+
+  // ── How the sport is sold ───────────────────────────────────────────────
+  // Everything a client needs to render venue setup for this sport without
+  // knowing its slug. Adding a sport here must never require a deploy.
+
+  /// The unit an owner types a price in. Storage stays `Court.pricePerHour`.
+  pricingUnit        SportPricingUnit @default(PER_HOUR)
+  /// What the bookable thing is called — "court", "pitch", "lane", "table",
+  /// "bay", "rink". Drives every label in venue setup ("Add table").
+  unitLabel          String           @default("court")
+  unitLabelPlural    String           @default("courts")
   /// Allowed booking slot lengths in minutes for this sport (e.g. [30, 60, 90, 120]).
-  /// Admin-managed; the app shows these as the slot-duration choices during venue setup.
-  slotDurations Int[]   @default([30, 60, 90, 120])
+  /// Admin-managed; shown as the slot-duration choices during venue setup.
+  /// Must hold at least one entry — an empty list makes the sport unsellable.
+  slotDurations      Int[]            @default([30, 60, 90, 120])
+  /// Which of `slotDurations` a new court starts on. Must be a member.
+  defaultSlotMinutes Int              @default(60)
+  /// Booking duration bounds — a cricket ground has a 4-hour floor, a snooker
+  /// table a 3-hour ceiling. Null means "no bound beyond the slot grid".
+  minDurationMinutes Int?
+  maxDurationMinutes Int?
+  bookingMode        SportBookingMode @default(EXCLUSIVE)
+  /// Places per slot, required when `bookingMode = CAPACITY`.
+  defaultCapacity    Int?
+
+  // ── Court attribute catalogues ──────────────────────────────────────────
+  // The owner picks from these when setting up a court. Kept as three typed
+  // lists rather than one bag of chips so each is filterable and single- vs
+  // multi-select is unambiguous.
+
+  /// Playing surfaces, e.g. ["Artificial Turf", "Concrete"]. Single-select per court.
+  surfaces      String[] @default([])
+  /// Configurations sold, e.g. ["5-a-side", "7-a-side"]. Single-select per court.
+  formats       String[] @default([])
+  /// Genuine per-court features, e.g. ["Floodlights", "Air-Conditioned"]. Multi-select.
+  courtFeatures String[] @default([])
+
+  // Note: extras (bibs, shuttles, a referee) are NOT here. Every venue charges
+  // differently for them, so the owner enters their own with their own prices —
+  // see `Venue.additionalServices`. Peak windows and booking windows are
+  // likewise per-venue, not per-sport.
+
+  /// DEPRECATED — derived on write as surfaces + formats + courtFeatures.
+  /// Kept populated so the Expo app's venue setup keeps working unchanged
+  /// until it moves to the typed lists above.
+  features String[] @default([])
 
   createdById String?
   createdBy   User?   @relation("UserSportsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
-  venueSports VenueSport[]
-  courts      Court[]
-  tournaments Tournament[]
+  venueSports  VenueSport[]
+  courts       Court[]
+  tournaments  Tournament[]
+  statTypes    SportStatType[]
+  periodConfig SportPeriodConfig?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

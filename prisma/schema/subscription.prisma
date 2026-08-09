@@ -84,13 +84,32 @@ model Subscription {
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   status    SubscriptionStatus @default(ACTIVE)
-  /// Owner-picked start date; expiry = startedAt + plan.validityDays.
+  /// Owner-picked start date; expiry = startedAt + validityDays.
   startedAt DateTime
   expiresAt DateTime
 
   /// The member's chosen daily start time ("HH:mm"); the slot runs `sessionMinutes`
   /// from here and must sit inside one of the plan's `windows`.
   slotStart String
+
+  // ── Terms locked in when this term was bought ──────────────────────────────
+  // The plan can be re-priced or re-timed at any moment; what somebody already
+  // paid for cannot change under them. Same rule as `Booking.pricePerHour`.
+  // A renewal buys a NEW term, so it re-snapshots at the plan's current terms.
+
+  /// What this term costs — the plan's price on the day it was bought/renewed.
+  price          Decimal  @db.Decimal(10, 2)
+  /// Days this term runs for (drives the expiry a renewal adds).
+  validityDays   Int
+  /// Length of the member's daily session. Defines the court block, so changing
+  /// the plan can never silently widen an existing member's hold on the court.
+  sessionMinutes Int
+  /// The weekdays this member holds ("sun".."sat").
+  daysOfWeek     String[] @default([])
+
+  /// When the current pause began. Resuming pushes `expiresAt` out by the days
+  /// lost, so a paused member never pays for time they couldn't play.
+  pausedAt DateTime?
 
   payments SubscriptionPayment[]
 

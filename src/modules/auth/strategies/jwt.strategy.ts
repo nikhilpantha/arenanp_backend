@@ -42,6 +42,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         role: true,
         isActive: true,
         tokenVersion: true,
+        mustChangePassword: true,
         capabilities: { select: { type: true, status: true } },
       },
     });
@@ -59,6 +60,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       phoneNumber: user.phoneNumber,
       role: user.role,
       capabilities: user.capabilities.map((c) => ({ type: c.type, status: c.status })),
+      mustChangePassword: user.mustChangePassword,
     };
   }
 }

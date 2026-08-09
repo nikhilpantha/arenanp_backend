@@ -15,6 +15,25 @@ import { Decimal } from '@prisma/client/runtime/library';
 import '../../../common/enums';
 import { mapSportStub, SportStub } from '../../admin/sports/dto/sport-stub.model';
 
+@ObjectType({
+  description:
+    "Who did something to a booking. Names come from the venue's own staff, so a removed employee still reads as themselves — the User row survives, only their seat goes.",
+})
+export class BookingActorModel {
+  @Field(() => ID) id!: string;
+  @Field({ nullable: true }) name?: string;
+}
+
+@ObjectType({ description: 'One recorded change of state, and who made it.' })
+export class BookingStatusEventModel {
+  @Field(() => ID) id!: string;
+  @Field(() => BookingStatus, { nullable: true }) fromStatus?: BookingStatus;
+  @Field(() => BookingStatus) toStatus!: BookingStatus;
+  @Field(() => BookingActorModel, { nullable: true }) actor?: BookingActorModel;
+  @Field({ nullable: true }) note?: string;
+  @Field() createdAt!: Date;
+}
+
 @ObjectType({ description: 'A single add-on service charged on a booking.' })
 export class BookingExtraModel {
   @Field(() => ID) id!: string;
@@ -57,14 +76,43 @@ export class BookingModel {
   @Field(() => PaymentProvider, { nullable: true }) paymentMethod?: PaymentProvider;
 
   @Field({ nullable: true }) notes?: string;
+
+  /**
+   * Attribution. Null on anything a player booked themselves, and on rows from
+   * before staff accounts existed — the column has always been nullable.
+   */
+  @Field(() => BookingActorModel, { nullable: true, description: 'Who created this booking.' })
+  createdBy?: BookingActorModel;
+  @Field(() => BookingActorModel, { nullable: true }) cancelledBy?: BookingActorModel;
+  @Field(() => [BookingStatusEventModel], {
+    description: 'Every state change, oldest first, with whoever made it.',
+  })
+  statusEvents!: BookingStatusEventModel[];
+
   @Field() createdAt!: Date;
 }
 
 type CourtWithSport = PrismaCourt & { sport: PrismaSport };
+type ActorRow = { id: string; fullName: string | null } | null;
+type StatusEventRow = {
+  id: string;
+  fromStatus: BookingStatus | null;
+  toStatus: BookingStatus;
+  note: string | null;
+  createdAt: Date;
+  actor?: ActorRow;
+};
 export type BookingWithRelations = PrismaBooking & {
   court: CourtWithSport;
   extras?: PrismaBookingExtra[];
+  createdBy?: ActorRow;
+  cancelledBy?: ActorRow;
+  statusEvents?: StatusEventRow[];
 };
+
+function mapActor(actor: ActorRow | undefined): BookingActorModel | undefined {
+  return actor ? { id: actor.id, name: actor.fullName ?? undefined } : undefined;
+}
 
 function num(value: Decimal): number {
   return Number(value.toString());
@@ -98,6 +146,16 @@ export function mapBookingToGraphql(b: BookingWithRelations): BookingModel {
     amountPaid: num(b.amountPaid),
     paymentMethod: b.paymentMethod ?? undefined,
     notes: b.adminNotes ?? undefined,
+    createdBy: mapActor(b.createdBy),
+    cancelledBy: mapActor(b.cancelledBy),
+    statusEvents: (b.statusEvents ?? []).map((e) => ({
+      id: e.id,
+      fromStatus: e.fromStatus ?? undefined,
+      toStatus: e.toStatus,
+      actor: mapActor(e.actor),
+      note: e.note ?? undefined,
+      createdAt: e.createdAt,
+    })),
     createdAt: b.createdAt,
   };
 }

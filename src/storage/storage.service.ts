@@ -109,9 +109,42 @@ export class StorageService {
   }
 
   /**
+   * May `userId` resolve `key` into a download URL on their own say-so?
+   *
+   * Keys are `{prefix}/{ownerId}/{uuid}.{ext}`, so the uploader is the
+   * second-to-last segment. Most categories are marketplace display assets —
+   * a venue's cover photo is meant to be seen by strangers, and its key is
+   * handed out by public queries — so those stay open to any signed-in caller.
+   * Categories marked `private` are KYC papers: only the person who uploaded
+   * them, and the platform, have any business fetching those.
+   *
+   * This governs the free-form `mediaUrl` entry point only. Field resolvers
+   * that presign a key they just read from a record the caller was authorised
+   * to fetch don't come through here — that authorisation already happened,
+   * and `VenueService.redactVenue` is what decides it for venue documents.
+   */
+  canResolveKey(key: string, userId: string, isPlatformAdmin: boolean): boolean {
+    if (/^https?:\/\//i.test(key)) return true;
+    if (isPlatformAdmin) return true;
+
+    const privatePrefixes = Object.values(CATEGORY_RULES)
+      .filter((rule) => rule.private)
+      .map((rule) => rule.prefix);
+    const isPrivate = privatePrefixes.some((prefix) => key.startsWith(`${prefix}/`));
+    if (!isPrivate) return true;
+
+    const segments = key.split('/');
+    const ownerId = segments.length >= 2 ? segments[segments.length - 2] : null;
+    return ownerId === userId;
+  }
+
+  /**
    * Turn a stored object key into a presigned GET URL for display/download.
    * Returns absolute http(s) values unchanged (legacy / external URLs) and
    * passes through empty values as null so mappers stay simple.
+   *
+   * Callers reached from user input must check `canResolveKey` first — this
+   * method itself signs whatever it is handed.
    */
   async getDownloadUrl(keyOrUrl: string | null | undefined): Promise<string | null> {
     if (!keyOrUrl) return null;

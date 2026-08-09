@@ -9,6 +9,7 @@ import {
   BookingSource,
   BookingStatus,
   CustomerType,
+  PaymentProvider,
   Prisma,
   SubscriptionStatus,
   VenueVerificationStatus,
@@ -17,6 +18,41 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { parseHHmmToMinutes, utcToNepalMinutesOfDay } from '../../common/utils/nepal-time';
 import { phoneKey } from '../../common/utils/phone.util';
+
+/**
+ * Append the money that actually moved to the payment ledger.
+ *
+ * Callers overwrite `amountPaid` with a new running total, so the event worth
+ * recording is the delta. A negative delta is a correction (an owner fixing an
+ * over-entry), not a refund — it is still written, because dropping it would
+ * break the `SUM(booking_payments) = amountPaid` invariant the transactions
+ * ledger and cash reconciliation both rely on.
+ */
+async function appendPaymentLedger(
+  tx: Prisma.TransactionClient,
+  opts: {
+    bookingId: string;
+    venueId: string;
+    previousPaid: number;
+    nextPaid: number;
+    method?: PaymentProvider | null;
+    takenById?: string | null;
+    note?: string;
+  },
+): Promise<void> {
+  const delta = Math.round((opts.nextPaid - opts.previousPaid) * 100) / 100;
+  if (delta === 0) return;
+  await tx.bookingPayment.create({
+    data: {
+      bookingId: opts.bookingId,
+      venueId: opts.venueId,
+      amount: delta,
+      method: opts.method ?? null,
+      takenById: opts.takenById ?? null,
+      note: opts.note ?? (delta < 0 ? 'Correction to the recorded amount.' : null),
+    },
+  });
+}
 
 import { closureConflictMessage, findOverlappingClosure } from '../closures/closures.util';
 
@@ -34,9 +70,20 @@ import type {
 import type { BookingWithRelations } from './dto/booking.model';
 import type { PlayerBookingWithRelations } from './dto/player-booking.model';
 
+// The actor relations are what turn "who cancelled the 7 PM booking?" from an
+// unanswerable question into a line on the screen. The columns have been
+// written since bookings shipped; nothing has ever read them back.
+const ACTOR_SELECT = { select: { id: true, fullName: true } } as const;
+
 const BOOKING_INCLUDES = {
   court: { include: { sport: true } },
   extras: true,
+  createdBy: ACTOR_SELECT,
+  cancelledBy: ACTOR_SELECT,
+  statusEvents: {
+    include: { actor: ACTOR_SELECT },
+    orderBy: { createdAt: 'asc' },
+  },
 } satisfies Prisma.BookingInclude;
 
 const PLAYER_BOOKING_INCLUDES = {
@@ -185,27 +232,30 @@ export class BookingRepository {
         // PENDING (awaiting venue approval) still holds the slot — matches the
         // subscriptions module's own slotConflict/takenSlotStarts — so a one-off
         // booking can't be confirmed onto a slot a member has requested.
+        //
+        // PAUSED is deliberately absent: a paused member has handed the hour back
+        // for now, so the venue can still sell it as a walk-in. Their claim against
+        // OTHER memberships survives (see slotConflict) — the slot is theirs again
+        // when they resume, which is why resuming re-checks these bookings.
         status: {
-          in: [
-            SubscriptionStatus.PENDING,
-            SubscriptionStatus.SCHEDULED,
-            SubscriptionStatus.ACTIVE,
-            SubscriptionStatus.PAUSED,
-          ],
+          in: [SubscriptionStatus.PENDING, SubscriptionStatus.SCHEDULED, SubscriptionStatus.ACTIVE],
         },
         startedAt: { lte: opts.startAt },
         expiresAt: { gte: opts.startAt },
       },
       select: {
         slotStart: true,
+        // Terms as this member bought them, not as the plan reads today — re-timing
+        // a plan must never widen an existing member's hold over live bookings.
+        sessionMinutes: true,
+        daysOfWeek: true,
         customer: { select: { name: true } },
-        plan: { select: { sessionMinutes: true, daysOfWeek: true } },
       },
     });
     for (const s of subs) {
-      if (!s.plan.daysOfWeek.includes(weekday)) continue;
+      if (!s.daysOfWeek.includes(weekday)) continue;
       const subStart = parseHHmmToMinutes(s.slotStart);
-      const subEnd = subStart + s.plan.sessionMinutes;
+      const subEnd = subStart + s.sessionMinutes;
       if (startMin < subEnd && endMin > subStart) {
         if (opts.generic) throw new ConflictException(TAKEN);
         throw new ConflictException(
@@ -266,7 +316,7 @@ export class BookingRepository {
           startAt,
           endAt,
         });
-        return tx.booking.create({
+        const created = await tx.booking.create({
           data: {
             venueId: input.venueId,
             courtId: input.courtId,
@@ -294,6 +344,18 @@ export class BookingRepository {
           },
           include: BOOKING_INCLUDES,
         });
+
+        // Money taken at the counter when the booking was written up.
+        await appendPaymentLedger(tx, {
+          bookingId: created.id,
+          venueId: created.venueId,
+          previousPaid: 0,
+          nextPaid: amountPaid,
+          method: input.paymentMethod ?? null,
+          takenById: createdById,
+        });
+
+        return created;
       });
     } catch (e) {
       if (isOverlapViolation(e)) {
@@ -423,7 +485,15 @@ export class BookingRepository {
   async complete(input: CompleteVenueBookingInput, actorId: string): Promise<BookingWithRelations> {
     const existing = await this.prisma.booking.findFirst({
       where: { id: input.bookingId, venueId: input.venueId },
-      select: { id: true, status: true, subtotal: true, discountAmount: true, freeGame: true },
+      select: {
+        id: true,
+        venueId: true,
+        status: true,
+        subtotal: true,
+        discountAmount: true,
+        freeGame: true,
+        amountPaid: true,
+      },
     });
     if (!existing) throw new NotFoundException('Booking not found for this venue.');
 
@@ -452,6 +522,15 @@ export class BookingRepository {
           note: input.note ?? null,
         },
       });
+      // Settling up at checkout — often the balance after a deposit.
+      await appendPaymentLedger(tx, {
+        bookingId: existing.id,
+        venueId: existing.venueId,
+        previousPaid: Number(existing.amountPaid.toString()),
+        nextPaid: amountPaid,
+        method: input.paymentMethod ?? null,
+        takenById: actorId,
+      });
       return tx.booking.update({
         where: { id: existing.id },
         data: {
@@ -470,20 +549,37 @@ export class BookingRepository {
     });
   }
 
-  async recordPayment(input: RecordBookingPaymentInput): Promise<BookingWithRelations> {
-    const existing = await this.prisma.booking.findFirst({
-      where: { id: input.bookingId, venueId: input.venueId },
-      select: { id: true },
-    });
-    if (!existing) throw new NotFoundException('Booking not found for this venue.');
-    return this.prisma.booking.update({
-      where: { id: existing.id },
-      data: {
-        paymentStatus: input.paymentStatus,
-        amountPaid: input.amountPaid,
-        paymentMethod: input.paymentMethod ?? undefined,
-      },
-      include: BOOKING_INCLUDES,
+  async recordPayment(
+    input: RecordBookingPaymentInput,
+    actorId?: string,
+  ): Promise<BookingWithRelations> {
+    // Transactional: the ledger row and the cached total must move together, or
+    // `SUM(booking_payments) = amountPaid` stops holding.
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.booking.findFirst({
+        where: { id: input.bookingId, venueId: input.venueId },
+        select: { id: true, venueId: true, amountPaid: true },
+      });
+      if (!existing) throw new NotFoundException('Booking not found for this venue.');
+
+      await appendPaymentLedger(tx, {
+        bookingId: existing.id,
+        venueId: existing.venueId,
+        previousPaid: Number(existing.amountPaid.toString()),
+        nextPaid: input.amountPaid,
+        method: input.paymentMethod ?? null,
+        takenById: actorId,
+      });
+
+      return tx.booking.update({
+        where: { id: existing.id },
+        data: {
+          paymentStatus: input.paymentStatus,
+          amountPaid: input.amountPaid,
+          paymentMethod: input.paymentMethod ?? undefined,
+        },
+        include: BOOKING_INCLUDES,
+      });
     });
   }
 

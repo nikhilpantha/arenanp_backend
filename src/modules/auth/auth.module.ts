@@ -8,11 +8,15 @@ import { AuthService } from './auth.service';
 import { AuthResolver } from './auth.resolver';
 import { AuthController } from './auth.controller';
 import { OtpService } from './otp.service';
+import { RefreshTokenService } from './refresh-token.service';
+import { SessionResponder } from './session-responder.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CapabilityGuard } from '../../common/guards/capability.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { GqlThrottlerGuard } from '../../common/guards/gql-throttler.guard';
+import { PasswordChangeGuard } from '../../common/guards/password-change.guard';
 import { CapabilitiesModule } from '../capabilities/capabilities.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { PrismaModule } from '../../database/prisma.module';
@@ -50,17 +54,27 @@ import '../../common/enums';
     AuthService,
     AuthResolver,
     OtpService,
+    RefreshTokenService,
+    SessionResponder,
     JwtStrategy,
     PermissionCacheService,
     ResourceOwnershipService,
+    // Rate limiting runs FIRST, before authentication: a brute-force attempt
+    // is exactly the traffic that never gets past JwtAuthGuard, so a limiter
+    // registered after it would never see the requests it exists to stop.
+    { provide: APP_GUARD, useClass: GqlThrottlerGuard },
     // Globally protect every route/resolver. Mark endpoints with @Public() to opt out.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: CapabilityGuard },
-    // Dynamic RBAC — enforces @RequirePermission() against the roles tables.
+    // Enforces @RequirePermission() against each user's permission grants.
     { provide: APP_GUARD, useClass: PermissionGuard },
+    // Last, so it runs with `req.user` already populated: an account whose
+    // password was set by someone else can do nothing until they replace it.
+    { provide: APP_GUARD, useClass: PasswordChangeGuard },
   ],
   exports: [
     AuthService,
+    SessionResponder,
     JwtModule,
     PassportModule,
     PermissionCacheService,

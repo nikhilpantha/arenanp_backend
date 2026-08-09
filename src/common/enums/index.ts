@@ -5,15 +5,19 @@ import {
   BookingStatus,
   CapabilityStatus,
   CapabilityType,
+  CourtEnvironment,
   CustomerType,
   DisputeCategory,
   DisputeStatus,
+  ExpenseCategory,
+  MatchStage,
   MatchStatus,
   MembershipDuration,
   MembershipStatus,
   OfferAudience,
   OfferDiscountType,
   OfferTrigger,
+  PayBasis,
   PaymentProvider,
   PaymentStatus,
   PermissionDomain,
@@ -21,7 +25,12 @@ import {
   RefundStatus,
   StaffStatus,
   SettlementStatus,
+  SportBookingMode,
+  SportPeriodType,
+  SportPricingUnit,
+  StatScope,
   SubscriptionStatus,
+  TournamentFormat,
   TournamentRegistrationStatus,
   TournamentStatus,
   TournamentVisibility,
@@ -52,6 +61,12 @@ registerEnumType(VenueMemberRole, {
   name: 'VenueMemberRole',
   description:
     "A user's role within a single venue (venue-scoped RBAC): OWNER, MANAGER, FRONT_DESK, STAFF, COACH.",
+});
+
+registerEnumType(PayBasis, {
+  name: 'PayBasis',
+  description:
+    "How a staff member's pay is reckoned. MONTHLY is the only basis whose owed amount the system can work out unaided; DAILY and PER_SESSION need a count the owner enters when settling up.",
 });
 
 registerEnumType(MembershipStatus, {
@@ -131,6 +146,39 @@ registerEnumType(TournamentVisibility, {
   description: 'Visibility of a tournament on the public app.',
 });
 
+registerEnumType(TournamentFormat, {
+  name: 'TournamentFormat',
+  description:
+    'Bracket / scheduling shape: SINGLE_ELIMINATION, DOUBLE_ELIMINATION, ROUND_ROBIN or GROUP_KNOCKOUT.',
+});
+
+registerEnumType(StatScope, {
+  name: 'StatScope',
+  description: 'Whether a stat is recorded against a whole TEAM or an individual PLAYER.',
+});
+
+registerEnumType(SportPeriodType, {
+  name: 'SportPeriodType',
+  description: 'Match period shape: HALVES, QUARTERS, SETS, INNINGS or SINGLE (one running score).',
+});
+
+registerEnumType(CourtEnvironment, {
+  name: 'CourtEnvironment',
+  description: 'Whether a court is INDOOR, OUTDOOR, or ROOFED (netted/covered, no walls).',
+});
+
+registerEnumType(SportPricingUnit, {
+  name: 'SportPricingUnit',
+  description:
+    'The unit a venue owner prices this sport in: PER_HOUR, PER_SLOT, PER_SESSION, PER_DAY or PER_PERSON_SLOT. Storage stays Court.pricePerHour — this governs entry and display only.',
+});
+
+registerEnumType(SportBookingMode, {
+  name: 'SportBookingMode',
+  description:
+    'EXCLUSIVE — one booking takes the whole surface (a futsal court). CAPACITY — the surface sells N places per slot (a pool lane, a skating session).',
+});
+
 registerEnumType(TournamentRegistrationStatus, {
   name: 'TournamentRegistrationStatus',
   description:
@@ -140,6 +188,12 @@ registerEnumType(TournamentRegistrationStatus, {
 registerEnumType(MatchStatus, {
   name: 'MatchStatus',
   description: 'State of a tournament match.',
+});
+
+registerEnumType(MatchStage, {
+  name: 'MatchStage',
+  description:
+    'Where a match sits in the structure: GROUP, KNOCKOUT, LOSERS (double-elim) or FINAL.',
 });
 
 registerEnumType(OfferDiscountType, {
@@ -187,15 +241,24 @@ registerEnumType(PermissionScopeType, {
     'What a permission grant applies to: PLATFORM (whole platform), VENUE (one venue) or TOURNAMENT (one tournament).',
 });
 
+registerEnumType(ExpenseCategory, {
+  name: 'ExpenseCategory',
+  description:
+    'Operating-cost category for a venue expense: RENT, SALARY, UTILITIES, EQUIPMENT, MAINTENANCE, MARKETING, SUPPLIES, TAX or OTHER.',
+});
+
 export {
   BookingPaymentStatus,
   BookingSource,
   BookingStatus,
   CapabilityStatus,
   CapabilityType,
+  CourtEnvironment,
   CustomerType,
   DisputeCategory,
   DisputeStatus,
+  ExpenseCategory,
+  MatchStage,
   MatchStatus,
   MembershipDuration,
   MembershipStatus,
@@ -209,7 +272,12 @@ export {
   RefundStatus,
   StaffStatus,
   SettlementStatus,
+  SportBookingMode,
+  SportPeriodType,
+  SportPricingUnit,
+  StatScope,
   SubscriptionStatus,
+  TournamentFormat,
   TournamentRegistrationStatus,
   TournamentStatus,
   TournamentVisibility,

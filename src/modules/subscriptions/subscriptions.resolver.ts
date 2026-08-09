@@ -4,12 +4,14 @@ import { CapabilityType } from '@prisma/client';
 
 import { RequireCapability } from '../../common/decorators/capability.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { canRead, VenueAccess } from '../../common/decorators/venue-access.decorator';
 import { RequireVenuePermission } from '../../common/decorators/venue-permission.decorator';
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
-import type { AuthUser } from '../../common/types/auth-context';
+import type { AuthUser, VenueAccessContext } from '../../common/types/auth-context';
 
 import { SubscriptionsService } from './subscriptions.service';
 import {
+  ApproveSubscriptionInput,
   CreateMembershipPlanInput,
   CreateMySubscriptionInput,
   CreateSubscriptionInput,
@@ -37,7 +39,7 @@ export class SubscriptionsResolver {
     description: "A venue's membership plans.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.view')
+  @RequireVenuePermission('bookings:read')
   venueMembershipPlans(
     @Args('input') input: ListMembershipPlansInput,
   ): Promise<MembershipPlanModel[]> {
@@ -71,7 +73,7 @@ export class SubscriptionsResolver {
     description: 'Create a membership plan.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.memberships.manage')
+  @RequireVenuePermission('memberships:manage')
   createMembershipPlan(
     @Args('input') input: CreateMembershipPlanInput,
   ): Promise<MembershipPlanModel> {
@@ -83,7 +85,7 @@ export class SubscriptionsResolver {
     description: 'Update / activate / deactivate a membership plan.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.memberships.manage')
+  @RequireVenuePermission('memberships:manage')
   updateMembershipPlan(
     @Args('input') input: UpdateMembershipPlanInput,
   ): Promise<MembershipPlanModel> {
@@ -95,7 +97,7 @@ export class SubscriptionsResolver {
     description: 'Delete a membership plan.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.memberships.manage')
+  @RequireVenuePermission('memberships:manage')
   deleteMembershipPlan(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('planId', { type: () => ID }) planId: string,
@@ -110,7 +112,7 @@ export class SubscriptionsResolver {
     description: "A venue's subscriptions (excludes CANCELLED unless filtered), paginated.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.view')
+  @RequireVenuePermission('bookings:read')
   venueSubscriptions(
     @Args('input') input: ListSubscriptionsInput,
   ): Promise<PaginatedSubscriptions> {
@@ -122,7 +124,7 @@ export class SubscriptionsResolver {
     description: 'A single subscription with its payment history.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.view')
+  @RequireVenuePermission('bookings:read')
   venueSubscription(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('subscriptionId', { type: () => ID }) subscriptionId: string,
@@ -135,7 +137,7 @@ export class SubscriptionsResolver {
     description: 'Subscribe a customer to a plan (records the first payment).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.memberships.manage')
+  @RequireVenuePermission('memberships:manage')
   createSubscription(@Args('input') input: CreateSubscriptionInput): Promise<SubscriptionModel> {
     return this.service.createSubscription(input);
   }
@@ -168,34 +170,52 @@ export class SubscriptionsResolver {
     description: 'Renew a subscription (extends the window + records a payment).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.memberships.manage')
+  @RequireVenuePermission('memberships:manage')
   renewSubscription(@Args('input') input: RenewSubscriptionInput): Promise<SubscriptionModel> {
     return this.service.renewSubscription(input);
   }
 
   @Mutation(() => SubscriptionModel, {
     name: 'setSubscriptionStatus',
-    description: 'Pause, resume, cancel or expire a subscription.',
+    description:
+      'Pause, resume or cancel a membership. Pausing frees the slot for walk-in bookings ' +
+      'but keeps it reserved against other memberships; resuming credits the paused days ' +
+      'onto the end date. Expiring happens on the end date by itself, and a pending ' +
+      'request is approved with approveSubscription, so neither can be set here.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.memberships.manage')
+  @RequireVenuePermission('memberships:manage')
   setSubscriptionStatus(
     @Args('input') input: SetSubscriptionStatusInput,
   ): Promise<SubscriptionModel> {
     return this.service.setStatus(input);
   }
 
+  @Mutation(() => SubscriptionModel, {
+    name: 'approveSubscription',
+    description:
+      "Approve a player's membership request: re-checks the plan is still on sale and " +
+      'the slot is still free, then activates it and records the first payment.',
+  })
+  @UseGuards(VenuePermissionGuard)
+  @RequireVenuePermission('memberships:manage')
+  approveSubscription(@Args('input') input: ApproveSubscriptionInput): Promise<SubscriptionModel> {
+    return this.service.approveRequest(input);
+  }
+
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
   @Query(() => MembershipStatsModel, {
     name: 'venueMembershipStats',
-    description: 'Venue membership KPIs (active, expiring, revenue, renewal rate).',
+    description:
+      "Venue membership KPIs. `monthlyRevenue` is omitted unless the caller holds 'finance:read'.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.view')
+  @RequireVenuePermission('bookings:read')
   venueMembershipStats(
     @Args('venueId', { type: () => ID }) venueId: string,
+    @VenueAccess() access: VenueAccessContext | undefined,
   ): Promise<MembershipStatsModel> {
-    return this.service.stats(venueId);
+    return this.service.stats(venueId, canRead(access, 'finance:read'));
   }
 }

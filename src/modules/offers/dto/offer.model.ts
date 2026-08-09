@@ -35,7 +35,8 @@ export class OfferModel {
   code?: string;
 
   @Field() validFrom!: Date;
-  @Field() validUntil!: Date;
+  @Field(() => Date, { nullable: true, description: 'Null = open-ended; runs until switched off.' })
+  validUntil!: Date | null;
   @Field() isActive!: boolean;
 
   @Field(() => Int, { nullable: true }) usageLimit?: number;

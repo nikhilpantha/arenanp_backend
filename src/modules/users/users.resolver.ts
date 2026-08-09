@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/types/auth-context';
 import { StorageService } from '../../storage/storage.service';
 import { PermissionResolverService } from '../rbac/permission-resolver.service';
+import { AllowWhilePasswordPending } from '../../common/decorators/allow-password-pending.decorator';
 
 @Resolver(() => User)
 export class UsersResolver {
@@ -21,6 +22,9 @@ export class UsersResolver {
     return this.storage.getDownloadUrl(user.avatarUrl);
   }
 
+  // Readable even while a password change is pending: the client has to know
+  // who it is to render the "choose a password" screen it is being sent to.
+  @AllowWhilePasswordPending()
   @Query(() => User, { description: 'Returns the currently authenticated user.' })
   async me(@CurrentUser() current: AuthUser): Promise<User> {
     const user = await this.usersService.findById(current.id);

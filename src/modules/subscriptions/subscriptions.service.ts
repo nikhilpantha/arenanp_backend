@@ -4,9 +4,10 @@ import { SubscriptionStatus } from '@prisma/client';
 import { buildPageInfo } from '../../common/dto/pagination.input';
 import { CustomersRepository } from '../customers/customers.repository';
 
-import { assertSlotInWindows, normaliseWindows } from './slots.util';
+import { assertSlotInWindows, normaliseDays, normaliseWindows } from './slots.util';
 import { SubscriptionsRepository } from './subscriptions.repository';
 import type {
+  ApproveSubscriptionInput,
   CreateMembershipPlanInput,
   CreateMySubscriptionInput,
   CreateSubscriptionInput,
@@ -35,19 +36,29 @@ export class SubscriptionsService {
   // ─── Plans ──────────────────────────────────────────────────────────────────
 
   async listPlans(input: ListMembershipPlansInput): Promise<MembershipPlanModel[]> {
-    const plans = await this.repo.listPlans(input);
-    return plans.map((p) => mapPlan(p, p._count?.subscriptions ?? 0));
+    const [plans, counts] = await Promise.all([
+      this.repo.listPlans(input),
+      this.repo.planCounts(input.venueId),
+    ]);
+    return plans.map((p) => mapPlan(p, counts.get(p.id)));
   }
 
   async createPlan(input: CreateMembershipPlanInput): Promise<MembershipPlanModel> {
     const windows = normaliseWindows(input.windows);
+    input.daysOfWeek = normaliseDays(input.daysOfWeek);
+    // Brand new, so nobody is on it — the zero counts from mapPlan are correct.
     return mapPlan(await this.repo.createPlan(input, windows));
   }
 
   async updatePlan(input: UpdateMembershipPlanInput): Promise<MembershipPlanModel> {
-    // Normalise the bands in place when they're being changed.
+    // Normalise the bands and days in place when they're being changed.
     if (input.windows !== undefined) input.windows = normaliseWindows(input.windows);
-    return mapPlan(await this.repo.updatePlan(input));
+    if (input.daysOfWeek !== undefined) input.daysOfWeek = normaliseDays(input.daysOfWeek);
+    const plan = await this.repo.updatePlan(input);
+    // Carry the real headcounts back — the console reads them straight off the
+    // mutation result, and zeroes here would make a plan look safe to delete.
+    const counts = await this.repo.planCounts(input.venueId);
+    return mapPlan(plan, counts.get(plan.id));
   }
 
   async deletePlan(venueId: string, planId: string): Promise<MembershipPlanModel> {
@@ -116,16 +127,18 @@ export class SubscriptionsService {
 
   /**
    * A player subscribes to a plan themselves: resolve (or create) their venue customer,
-   * then run the same validation + create path. Activates directly (pay at the venue).
+   * then run the same validation + create path.
+   *
+   * It lands as a PENDING request the venue approves, and no payment is recorded until
+   * then — the player pays at the counter, and approval is where that gets written.
    */
   async createMySubscription(
     input: CreateMySubscriptionInput,
     userId: string,
   ): Promise<SubscriptionModel> {
     const customer = await this.customers.getOrCreateForUser(input.venueId, userId);
-    // Player self-subscribe lands as a request the venue approves (→ ACTIVE/SCHEDULED).
     return this.createSubscription(
-      { ...input, customerId: customer.id, amountPaid: 0 },
+      { ...input, customerId: customer.id },
       SubscriptionStatus.PENDING,
     );
   }
@@ -149,18 +162,39 @@ export class SubscriptionsService {
   }
 
   async setStatus(input: SetSubscriptionStatusInput): Promise<SubscriptionModel> {
-    const sub = await this.repo.setStatus(input.venueId, input.subscriptionId, input.status);
-    return mapSubscription(sub, new Date());
+    const now = new Date();
+    const sub = await this.repo.setStatus(input.venueId, input.subscriptionId, input.status, now);
+    return mapSubscription(sub, now);
+  }
+
+  /** Turn a player's request into a real membership and record what they paid. */
+  async approveRequest(input: ApproveSubscriptionInput): Promise<SubscriptionModel> {
+    const now = new Date();
+    const sub = await this.repo.approveRequest(
+      input.venueId,
+      input.subscriptionId,
+      now,
+      input.amountPaid,
+      input.paymentMethod,
+    );
+    return mapSubscription(sub, now);
   }
 
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
-  async stats(venueId: string): Promise<MembershipStatsModel> {
+  /** `withMoney` reflects the caller's `finance:read`; see `BookingService.summary`. */
+  async stats(venueId: string, withMoney: boolean): Promise<MembershipStatsModel> {
     const now = new Date();
     await this.repo.reconcileStatuses(venueId, now);
     const soonBefore = new Date(now);
     soonBefore.setDate(soonBefore.getDate() + 7);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return this.repo.stats(venueId, now, soonBefore, monthStart);
+    const { monthlyRevenue, ...counts } = await this.repo.stats(
+      venueId,
+      now,
+      soonBefore,
+      monthStart,
+    );
+    return withMoney ? { ...counts, monthlyRevenue } : counts;
   }
 }

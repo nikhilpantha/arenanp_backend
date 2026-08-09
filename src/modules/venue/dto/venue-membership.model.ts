@@ -8,49 +8,33 @@ import {
 } from '@prisma/client';
 
 import '../../../common/enums';
+import { effectivePermissions } from '../../../common/constants/permissions';
 
 /**
- * The signed-in user's seat in a venue, with the permissions they actually hold
- * there and the venue's listing status. This is what the mobile app reads to
- * build its panels + permission-gated tabs.
- *
- * `permissions` is resolved from `staff_permissions` by the caller, not derived
- * from `role` — the role field is a display label with no authority.
+ * The signed-in user's seat in a venue, with the effective permission set
+ * (role defaults ∪ overrides) and the venue's listing status. This is what the
+ * mobile app reads to build its panels + permission-gated tabs.
  */
 @ObjectType()
 export class VenueMembershipModel {
   @Field(() => ID) venueId!: string;
   @Field() venueName!: string;
-  @Field(() => VenueMemberRole, {
-    deprecationReason: 'Display label only — authorization comes from `permissions`.',
-  })
-  role!: VenueMemberRole;
-  @Field(() => [String], {
-    description:
-      'Permissions held at this venue. `["*"]` means unrestricted (owner or super admin).',
-  })
-  permissions!: string[];
+  @Field(() => VenueMemberRole) role!: VenueMemberRole;
+  @Field(() => [String]) permissions!: string[];
   @Field(() => MembershipStatus) status!: MembershipStatus;
   @Field(() => VenueVerificationStatus) verificationStatus!: VenueVerificationStatus;
 }
 
 type MembershipWithVenue = PrismaMembership & {
-  venue: Pick<PrismaVenue, 'name' | 'verificationStatus' | 'primaryOwnerId'>;
+  venue: Pick<PrismaVenue, 'name' | 'verificationStatus'>;
 };
 
-/**
- * @param permissions Effective permissions at this venue, resolved from
- *   `staff_permissions` by the caller. Never derive these from `m.role`.
- */
-export function mapMembershipToGraphql(
-  m: MembershipWithVenue,
-  permissions: string[],
-): VenueMembershipModel {
+export function mapMembershipToGraphql(m: MembershipWithVenue): VenueMembershipModel {
   return {
     venueId: m.venueId,
     venueName: m.venue.name,
     role: m.role,
-    permissions,
+    permissions: effectivePermissions(m.role, m.permissions),
     status: m.status,
     verificationStatus: m.venue.verificationStatus,
   };

@@ -46,6 +46,17 @@ export interface CategoryRule {
   allowedMime: readonly string[];
   /** Max object size in bytes (advisory — surfaced to the client). */
   maxBytes: number;
+  /**
+   * True when the object is nobody's business but its uploader's and the
+   * platform's — KYC papers, identity documents.
+   *
+   * Everything else here ends up on a public marketplace page (a venue's
+   * cover photo, a court picture, an avatar), so any signed-in viewer
+   * resolving one of those keys is the feature working as intended. These
+   * are the ones where that assumption is wrong, and `mediaUrl` refuses them
+   * for anyone but the uploader.
+   */
+  private?: true;
 }
 
 const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'] as const;
@@ -82,6 +93,7 @@ export const CATEGORY_RULES: Record<UploadCategory, CategoryRule> = {
     scope: 'user',
     allowedMime: DOC_MIME,
     maxBytes: 15 * MB,
+    private: true,
   },
   [UploadCategory.COURT_IMAGE]: {
     prefix: 'courts',
@@ -106,6 +118,7 @@ export const CATEGORY_RULES: Record<UploadCategory, CategoryRule> = {
     scope: 'user',
     allowedMime: DOC_MIME,
     maxBytes: 15 * MB,
+    private: true,
   },
   [UploadCategory.SPORT_ICON]: {
     prefix: 'admin/sports',

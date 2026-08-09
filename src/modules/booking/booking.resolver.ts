@@ -2,9 +2,10 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { canRead, VenueAccess } from '../../common/decorators/venue-access.decorator';
 import { RequireVenuePermission } from '../../common/decorators/venue-permission.decorator';
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
-import type { AuthUser } from '../../common/types/auth-context';
+import type { AuthUser, VenueAccessContext } from '../../common/types/auth-context';
 
 import { VenueBookingSummary } from './dto/booking-summary.model';
 import {
@@ -28,26 +29,28 @@ export class BookingResolver {
     description: 'Bookings for a venue, filtered by scope (today/upcoming) or a specific date.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.view')
+  @RequireVenuePermission('bookings:read')
   venueBookings(@Args('input') input: ListVenueBookingsInput): Promise<BookingModel[]> {
     return this.service.list(input);
   }
 
   @Query(() => VenueBookingSummary, {
     name: 'venueBookingSummary',
-    description: "Today's booking overview numbers for a venue.",
+    description:
+      "Today's booking overview numbers for a venue. `revenueToday` is omitted unless the caller holds 'finance:read'.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.view')
+  @RequireVenuePermission('bookings:read')
   venueBookingSummary(
     @Args('venueId', { type: () => ID }) venueId: string,
+    @VenueAccess() access: VenueAccessContext | undefined,
   ): Promise<VenueBookingSummary> {
-    return this.service.summary(venueId);
+    return this.service.summary(venueId, canRead(access, 'finance:read'));
   }
 
   @Query(() => BookingModel, { name: 'venueBooking', description: 'A single booking by id.' })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.view')
+  @RequireVenuePermission('bookings:read')
   venueBooking(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('bookingId', { type: () => ID }) bookingId: string,
@@ -60,7 +63,7 @@ export class BookingResolver {
     description: 'Create a walk-in / manual booking from the venue panel.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.manage')
+  @RequireVenuePermission('bookings:write')
   createVenueBooking(
     @Args('input') input: CreateVenueBookingInput,
     @CurrentUser() user: AuthUser,
@@ -73,7 +76,7 @@ export class BookingResolver {
     description: 'Edit a pending booking — reschedule (court/time/duration) and/or its customer.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.manage')
+  @RequireVenuePermission('bookings:write')
   updateVenueBooking(@Args('input') input: UpdateVenueBookingInput): Promise<BookingModel> {
     return this.service.update(input);
   }
@@ -83,7 +86,7 @@ export class BookingResolver {
     description: 'Check in / complete / no-show / cancel a booking (writes a status event).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.manage')
+  @RequireVenuePermission('bookings:write')
   setVenueBookingStatus(
     @Args('input') input: SetBookingStatusInput,
     @CurrentUser() user: AuthUser,
@@ -96,7 +99,7 @@ export class BookingResolver {
     description: 'Complete a booking with add-on extras and final payment (writes a status event).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.manage')
+  @RequireVenuePermission('bookings:write')
   completeVenueBooking(
     @Args('input') input: CompleteVenueBookingInput,
     @CurrentUser() user: AuthUser,
@@ -109,11 +112,12 @@ export class BookingResolver {
     description: 'Update a booking’s payment state (paid / pending / partial).',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.manage')
+  @RequireVenuePermission('bookings:write')
   recordVenueBookingPayment(
     @Args('input') input: RecordBookingPaymentInput,
+    @CurrentUser() user: AuthUser,
   ): Promise<BookingModel> {
-    return this.service.recordPayment(input);
+    return this.service.recordPayment(input, user.id);
   }
 
   @Mutation(() => BookingModel, {
@@ -123,7 +127,7 @@ export class BookingResolver {
       'instantly, so this only applies to remaining PENDING_PAYMENT rows.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.manage')
+  @RequireVenuePermission('bookings:write')
   acceptVenueBooking(
     @Args('input') input: AcceptVenueBookingInput,
     @CurrentUser() user: AuthUser,
@@ -138,7 +142,7 @@ export class BookingResolver {
       'instantly, so this only applies to remaining PENDING_PAYMENT rows.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue.bookings.manage')
+  @RequireVenuePermission('bookings:write')
   declineVenueBooking(
     @Args('input') input: DeclineVenueBookingInput,
     @CurrentUser() user: AuthUser,

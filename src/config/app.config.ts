@@ -17,7 +17,19 @@ export const appConfig = registerAs('app', () => ({
   },
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? '',
-    accessTtl: process.env.JWT_ACCESS_TTL ?? '7d',
+    /// Short on purpose — a leaked access token is only useful for this long, and
+    /// the refresh token silently mints the next one.
+    accessTtl: process.env.JWT_ACCESS_TTL ?? '15m',
+  },
+  refresh: {
+    /// Go this long without using Arena NP and you have to sign in again. Every
+    /// refresh pushes the deadline out, so an active user is never logged out.
+    inactivityDays: parseInt(process.env.REFRESH_INACTIVITY_DAYS ?? '7', 10),
+    /// Cookie name holding the refresh token on web (httpOnly, JS can't read it).
+    cookieName: process.env.REFRESH_COOKIE_NAME ?? 'arenanp_refresh',
+    /// Set to `.arenanp.com` in production so every console subdomain shares the
+    /// session. Left blank in dev, where the host is plain `localhost`.
+    cookieDomain: process.env.REFRESH_COOKIE_DOMAIN ?? '',
   },
   otp: {
     length: parseInt(process.env.OTP_LENGTH ?? '6', 10),

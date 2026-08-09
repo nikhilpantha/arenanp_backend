@@ -6,6 +6,7 @@ enum TournamentStatus {
   APPROVED
   ACTIVE
   COMPLETED
+  REJECTED
   SUSPENDED
   CANCELLED
 }
@@ -14,6 +15,19 @@ enum TournamentVisibility {
   PUBLIC
   UNLISTED
   PRIVATE
+}
+
+/// Bracket / scheduling shape of a tournament. Decides how fixtures get
+/// generated and what a result means (advance a winner vs. update a table):
+///   SINGLE_ELIMINATION  knockout — lose once and you're out
+///   DOUBLE_ELIMINATION  winners + losers bracket
+///   ROUND_ROBIN         everyone plays everyone, ranked by a standings table
+///   GROUP_KNOCKOUT      round-robin groups feed a knockout bracket
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  ROUND_ROBIN
+  GROUP_KNOCKOUT
 }
 
 enum TournamentRegistrationStatus {
@@ -30,9 +44,129 @@ enum MatchStatus {
   CANCELLED
 }
 
+/// Where a match sits in the tournament structure.
+///   GROUP     round-robin (a league, or a group within GROUP_KNOCKOUT)
+///   KNOCKOUT  winners-bracket knockout match
+///   LOSERS    losers-bracket match (double elimination only)
+///   FINAL     grand final (double elimination)
+enum MatchStage {
+  GROUP
+  KNOCKOUT
+  LOSERS
+  FINAL
+}
+
+/// A group / pool within a tournament (ROUND_ROBIN uses a single implicit
+/// group with no rows; GROUP_KNOCKOUT creates one row per pool).
+model TournamentGroup {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String
+  displayOrder Int        @default(0)
+
+  registrations TournamentRegistration[]
+  matches       Match[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tournamentId, name])
+  @@index([tournamentId])
+  @@map("tournament_groups")
+}
+
+/// Whether a stat is recorded against a whole team or an individual player.
+enum StatScope {
+  TEAM
+  PLAYER
+}
+
+/// Shape of a match's scoring periods, used to pre-fill the scoring console.
+///   HALVES (football), QUARTERS (basketball), SETS (volleyball),
+///   INNINGS (cricket), SINGLE (one running score, no periods).
+enum SportPeriodType {
+  HALVES
+  QUARTERS
+  SETS
+  INNINGS
+  SINGLE
+}
+
+/// One recordable stat for a sport — a button in the live scoring console.
+/// `scoreDelta` is how the event moves the team's score (e.g. football GOAL = 1,
+/// basketball THREE_PT = 3, a YELLOW_CARD = 0). `scope` decides whether tapping
+/// it asks for a player. Admin-managed; organizers toggle them per tournament.
+model SportStatType {
+  id           String    @id @default(cuid())
+  sportId      String
+  sport        Sport     @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  key          String
+  label        String
+  icon         String?
+  scope        StatScope @default(PLAYER)
+  scoreDelta   Int       @default(0)
+  isScoring    Boolean   @default(false)
+  displayOrder Int       @default(0)
+  isActive     Boolean   @default(true)
+
+  toggles TournamentStatToggle[]
+  events  MatchEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sportId, key])
+  @@index([sportId])
+  @@map("sport_stat_types")
+}
+
+/// Per-sport default period structure (1:1 with Sport). The organizer can still
+/// override the count at match start (e.g. best-of-3 vs best-of-5 sets).
+model SportPeriodConfig {
+  id          String          @id @default(cuid())
+  sportId     String          @unique
+  sport       Sport           @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  periodType  SportPeriodType @default(HALVES)
+  periodCount Int             @default(2)
+  /// Periods a team must win to take the match (e.g. 3 for best-of-5 sets);
+  /// null = the match winner is simply whoever has the higher aggregate score.
+  winBy       Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sport_period_configs")
+}
+
+/// Per-tournament on/off override of a sport's stat type. A row only exists when
+/// the organizer has changed the default; absence = use the stat type's default.
+model TournamentStatToggle {
+  id              String        @id @default(cuid())
+  tournamentId    String
+  tournament      Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  sportStatTypeId String
+  sportStatType   SportStatType @relation(fields: [sportStatTypeId], references: [id], onDelete: Cascade)
+  enabled         Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tournamentId, sportStatTypeId])
+  @@index([tournamentId])
+  @@map("tournament_stat_toggles")
+}
+
 /// A multi-team tournament organised on the platform. The flow is:
 ///   DRAFT -> PENDING_APPROVAL -> APPROVED -> ACTIVE -> COMPLETED
-/// SUSPENDED / CANCELLED are terminal sinks an admin can move to at any time.
+/// REJECTED is a *recoverable* state: an admin sends a PENDING_APPROVAL
+/// tournament back with a `rejectionReason` the organizer can read, fix, and
+/// resubmit (REJECTED -> PENDING_APPROVAL). SUSPENDED / CANCELLED are terminal
+/// sinks an admin can move to at any time.
+///
+/// A DRAFT can only move to PENDING_APPROVAL once the organizer has paid the
+/// platform listing fee (`listingFeePaid`, attempts in
+/// `TournamentListingPayment`) — unless the configured fee is zero.
 ///
 /// Tournament-side payments live inline on `TournamentRegistration` (entry
 /// fees are a different beast from booking payments and don't share the
@@ -53,12 +187,31 @@ model Tournament {
   sport       Sport   @relation(fields: [sportId], references: [id], onDelete: Restrict)
   city        String?
 
+  /// Free-form map location (used when not linked to a registered `venue`):
+  /// a place label + address + coordinates so the tournament can show on a map.
+  locationName String?
+  address      String?
+  latitude     Float?
+  longitude    Float?
+
+  format TournamentFormat @default(SINGLE_ELIMINATION)
+
   startDate            DateTime
   endDate              DateTime
+  /// Registration opens at this moment; before it the public page shows
+  /// "registration not open yet". Null = open as soon as the tournament is
+  /// APPROVED. The closing edge is `registrationDeadline`.
+  registrationOpensAt  DateTime?
   registrationDeadline DateTime?
 
   maxTeams Int?
   minTeams Int?
+
+  /// Number of players that actually play at once (5 futsal, 6 volleyball …).
+  /// Used to validate lineups; null = organizer hasn't pinned it down.
+  teamSize          Int?
+  /// Upper bound on roster size incl. substitutes. Null = unlimited.
+  maxPlayersPerTeam Int?
 
   entryFee  Decimal @default(0) @db.Decimal(10, 2)
   prizePool Decimal @default(0) @db.Decimal(12, 2)
@@ -68,8 +221,16 @@ model Tournament {
   imageUrls     String[] @default([])
   rulesText     String?
 
+  /// Sponsors to showcase on the tournament page. JSON array of
+  /// `{ name, logoUrl? }` (logoUrl is an uploaded S3 object key, presigned on read).
+  sponsors Json @default("[]")
+
   status     TournamentStatus     @default(DRAFT)
   visibility TournamentVisibility @default(PUBLIC)
+
+  /// Whether the platform listing fee for this tournament has been settled.
+  /// Flipped by a verified gateway payment (or immediately when the fee is 0).
+  listingFeePaid Boolean @default(false)
 
   rejectionReason  String?
   suspensionReason String?
@@ -82,9 +243,12 @@ model Tournament {
   closedBy   User?     @relation("UserTournamentsClosed", fields: [closedById], references: [id], onDelete: SetNull)
   closedAt   DateTime?
 
-  registrations     TournamentRegistration[]
-  staff             OrganizerStaff[]  // Tournament-level staff
-  matches           Match[]
+  registrations   TournamentRegistration[]
+  matches         Match[]
+  statToggles     TournamentStatToggle[]
+  groups          TournamentGroup[]
+  listingPayments TournamentListingPayment[]
+  staff           OrganizerStaff[] // Tournament-level staff
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -96,6 +260,40 @@ model Tournament {
   @@index([city])
   @@index([startDate])
   @@map("tournaments")
+}
+
+/// One gateway payment attempt for a tournament's platform listing fee.
+/// `id` doubles as the gateway transaction id (eSewa `transaction_uuid`), so
+/// every attempt gets a fresh row; initiating a new attempt cancels + fails the
+/// previous PENDING one. A SUCCEEDED attempt is verified server-side against
+/// the gateway's status API before `Tournament.listingFeePaid` flips.
+model TournamentListingPayment {
+  id String @id @default(cuid())
+
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  provider PaymentProvider @default(ESEWA)
+  status   PaymentStatus   @default(PENDING)
+
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("NPR")
+
+  /// eSewa Intent booking handles returned by the `book` call — both are
+  /// needed for the status / cancel calls and to match the webhook callback.
+  bookingId     String?
+  correlationId String?
+
+  /// Gateway-side reference of the confirmed transaction (eSewa `reference_code`).
+  providerRef String?
+  paidAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tournamentId])
+  @@index([correlationId])
+  @@map("tournament_listing_payments")
 }
 
 /// A team's registration in a tournament. Carries the team's contact details,
@@ -113,6 +311,10 @@ model TournamentRegistration {
   contactEmail String?
   contactPhone String?
 
+  /// Group/pool this team is drawn into (GROUP_KNOCKOUT). Null = no group draw.
+  groupId String?
+  group   TournamentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
   status TournamentRegistrationStatus @default(REGISTERED)
 
   // Inline entry-fee payment fields. Tournament payments don't go through the
@@ -123,9 +325,13 @@ model TournamentRegistration {
   amountPaid       Decimal          @default(0) @db.Decimal(10, 2)
   paidAt           DateTime?
 
-  matchesAsTeam1 Match[] @relation("MatchTeam1")
-  matchesAsTeam2 Match[] @relation("MatchTeam2")
-  matchesWon     Match[] @relation("MatchWinner")
+  players TournamentPlayer[]
+
+  matchesAsTeam1 Match[]       @relation("MatchTeam1")
+  matchesAsTeam2 Match[]       @relation("MatchTeam2")
+  matchesWon     Match[]       @relation("MatchWinner")
+  matchLineups   MatchLineup[]
+  matchEvents    MatchEvent[]  @relation("RegistrationMatchEvents")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -133,6 +339,42 @@ model TournamentRegistration {
   @@index([tournamentId])
   @@index([status])
   @@map("tournament_registrations")
+}
+
+/// A player on a team's roster. A player does NOT need an app account: the
+/// captain can add a friend as a plain name (+ optional phone). If `userId` is
+/// set the player is a verified app user; otherwise they're a "guest" whose
+/// stats accrue against `contactPhone` and can be claimed later.
+///
+/// Only the organizer/captain edits the roster — see registration flow. Stats
+/// (goals, cards, aces …) attach to a TournamentPlayer, never to a raw name,
+/// so every event rolls up cleanly to player / team / tournament totals.
+model TournamentPlayer {
+  id String @id @default(cuid())
+
+  registrationId String
+  registration   TournamentRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  /// Set when the player is a real app user (claimed or added from a clan).
+  userId String?
+  user   User?   @relation("UserTournamentPlayerProfiles", fields: [userId], references: [id], onDelete: SetNull)
+
+  fullName     String
+  /// Phone is the Nepal-context identity used to invite/claim a guest later.
+  contactPhone String?
+  jerseyNumber Int?
+  isCaptain    Boolean @default(false)
+
+  lineups MatchLineup[]
+  events  MatchEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([registrationId])
+  @@index([userId])
+  @@index([contactPhone])
+  @@map("tournament_players")
 }
 
 /// A single match within a Tournament. `round` + `matchNumber` lets the
@@ -143,6 +385,10 @@ model Match {
   tournamentId String
   tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
+  groupId String?
+  group   TournamentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  stage       MatchStage @default(KNOCKOUT)
   round       Int
   matchNumber Int
 
@@ -157,6 +403,19 @@ model Match {
   winnerRegistrationId String?
   winner               TournamentRegistration? @relation("MatchWinner", fields: [winnerRegistrationId], references: [id], onDelete: SetNull)
 
+  // Bracket wiring — set at fixture generation so a result can advance teams
+  // generically: the winner flows into winnerToMatch[winnerToSlot]; for double
+  // elimination the loser drops into loserToMatch[loserToSlot].
+  winnerToMatchId String?
+  winnerToMatch   Match?  @relation("WinnerAdvance", fields: [winnerToMatchId], references: [id], onDelete: SetNull)
+  winnerToSlot    Int?
+  winnerFeeders   Match[] @relation("WinnerAdvance")
+
+  loserToMatchId String?
+  loserToMatch   Match?  @relation("LoserAdvance", fields: [loserToMatchId], references: [id], onDelete: SetNull)
+  loserToSlot    Int?
+  loserFeeders   Match[] @relation("LoserAdvance")
+
   scheduledAt DateTime?
 
   venueId String?
@@ -167,10 +426,119 @@ model Match {
   status MatchStatus @default(SCHEDULED)
   notes  String?
 
+  /// Period/set/quarter currently being scored (set at startMatch). Null until started.
+  currentPeriod Int?
+
+  lineup    MatchLineup[]
+  events    MatchEvent[]
+  periods   MatchPeriod[]
+  delegates MatchDelegate[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tournamentId, round, matchNumber])
   @@index([status])
   @@map("matches")
+}
+
+/// The players actually fielded for a match (chosen at startMatch from the
+/// team's roster). Stat events can only reference a player on this lineup, which
+/// keeps the per-player roll-ups clean.
+model MatchLineup {
+  id String @id @default(cuid())
+
+  matchId String
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  registrationId String
+  registration   TournamentRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  tournamentPlayerId String
+  player             TournamentPlayer @relation(fields: [tournamentPlayerId], references: [id], onDelete: Cascade)
+
+  isStarter Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@unique([matchId, tournamentPlayerId])
+  @@index([matchId])
+  @@index([registrationId])
+  @@map("match_lineups")
+}
+
+/// The append-only log of everything that happens in a match — the single source
+/// of truth. Every tap in the scoring console is one row; the live score, player
+/// stats and tournament leaderboards are all aggregations of this table. `voided`
+/// is the soft "undo". `scoreDelta` snapshots the applied points so undo/replay
+/// stays exact even if the catalogue later changes.
+model MatchEvent {
+  id String @id @default(cuid())
+
+  matchId String
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  sportStatTypeId String
+  sportStatType   SportStatType @relation(fields: [sportStatTypeId], references: [id], onDelete: Restrict)
+
+  /// The team this event is credited to (drives team score + standings).
+  registrationId String
+  registration   TournamentRegistration @relation("RegistrationMatchEvents", fields: [registrationId], references: [id], onDelete: Cascade)
+
+  /// The player, when the stat is PLAYER-scoped. Null for TEAM-scoped stats.
+  tournamentPlayerId String?
+  player             TournamentPlayer? @relation(fields: [tournamentPlayerId], references: [id], onDelete: SetNull)
+
+  value      Int  @default(1)
+  scoreDelta Int  @default(0)
+  period     Int?
+  minute     Int?
+
+  createdById String?
+  createdBy   User?   @relation("UserMatchEventsRecorded", fields: [createdById], references: [id], onDelete: SetNull)
+
+  voided Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([matchId])
+  @@index([registrationId])
+  @@index([tournamentPlayerId])
+  @@index([sportStatTypeId])
+  @@map("match_events")
+}
+
+/// Per-period (set / half / quarter / innings) score for a match. Lets volleyball
+/// best-of-N and per-quarter scores be stored, not just one running total.
+model MatchPeriod {
+  id String @id @default(cuid())
+
+  matchId String
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  index      Int
+  team1Score Int @default(0)
+  team2Score Int @default(0)
+
+  @@unique([matchId, index])
+  @@index([matchId])
+  @@map("match_periods")
+}
+
+/// A per-match scorekeeper the organizer assigns. They can run only this match's
+/// scoring console — not the rest of the tournament.
+model MatchDelegate {
+  id String @id @default(cuid())
+
+  matchId String
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("UserMatchDelegations", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([matchId, userId])
+  @@index([userId])
+  @@map("match_delegates")
 }

@@ -1,67 +1,80 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { GqlExecutionContext } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
+import { MembershipStatus, UserRole, VenueMemberRole } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
-import { PermissionResolverService } from '../../modules/rbac/permission-resolver.service';
+import {
+  effectivePermissions,
+  VENUE_PERMISSIONS,
+  type VenuePermission,
+} from '../constants/permissions';
 import { REQUIRE_VENUE_PERMISSION_KEY } from '../decorators/venue-permission.decorator';
-import type { AuthUser } from '../types/auth-context';
+import type { AuthUser, VenueAccessContext } from '../types/auth-context';
 
 /**
- * Venue-scoped authorization.
+ * Venue-scoped RBAC. For a handler annotated with `@RequireVenuePermission(p)`,
+ * resolves the caller's ACTIVE membership for the target venue and checks the
+ * effective permission set. The venue id is read from the GraphQL args:
+ * `venueId`, or `input.venueId`.
  *
- * For a handler annotated with `@RequireVenuePermission(key)`, checks the
- * caller's grants for the target venue in `staff_permissions`. The venue id is
- * read from the GraphQL args: `venueId`, or `input.venueId`.
- *
- * There are no venue roles. Permissions are granted per user per venue, so the
- * same person can manage bookings at one venue and only read them at another.
- *
- * Two principals bypass the grant check:
- *   - platform SUPER_ADMIN, who is unrestricted everywhere;
- *   - the venue's own owner, who implicitly holds everything at their venue.
- *
- * The owner bypass is what makes the model bootstrappable: a freshly created
- * venue has an owner and no grants, and without it nobody could grant the
- * owner anything.
+ * It also attaches what it resolved to the request as `venueAccess`, readable
+ * with `@VenueAccess()`. A handler that gates a whole operation on one
+ * permission often needs to gate a *field* on another — the day's revenue is
+ * `finance:read` while the day's booking count is `bookings:read` — and
+ * re-querying the membership per field would mean the same round trip twice.
  */
 @Injectable()
 export class VenuePermissionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
-    private readonly permissions: PermissionResolverService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<string | undefined>(
+    const required = this.reflector.getAllAndOverride<VenuePermission | undefined>(
       REQUIRE_VENUE_PERMISSION_KEY,
       [context.getHandler(), context.getClass()],
     );
     if (!required) return true;
 
     const gqlCtx = GqlExecutionContext.create(context);
-    const user: AuthUser | undefined = gqlCtx.getContext().req?.user;
+    const req = gqlCtx.getContext().req;
+    const user: AuthUser | undefined = req?.user;
     if (!user) throw new ForbiddenException('Not authenticated');
-    if (user.role === UserRole.SUPER_ADMIN) return true;
 
     const args = gqlCtx.getArgs<{ venueId?: string; input?: { venueId?: string } }>();
     const venueId = args.venueId ?? args.input?.venueId;
-    if (!venueId) throw new ForbiddenException('No venue specified for this action.');
 
-    const venue = await this.prisma.venue.findUnique({
-      where: { id: venueId },
-      select: { primaryOwnerId: true },
-    });
-    if (!venue) throw new ForbiddenException('Venue not found.');
-    if (venue.primaryOwnerId === user.id) return true;
-
-    const allowed = await this.permissions.venueUserHasPermission(user.id, venueId, required);
-    if (!allowed) {
-      throw new ForbiddenException(`Missing venue permission: ${required}`);
+    if (user.role === UserRole.SUPER_ADMIN) {
+      // Platform admins hold every permission everywhere, so field-level gates
+      // downstream must see a full set rather than an empty one.
+      attach(req, {
+        venueId: venueId ?? '',
+        role: VenueMemberRole.OWNER,
+        permissions: [...VENUE_PERMISSIONS],
+      });
+      return true;
     }
 
+    if (!venueId) throw new ForbiddenException('No venue specified for this action.');
+
+    const membership = await this.prisma.venueMembership.findUnique({
+      where: { venueId_userId: { venueId, userId: user.id } },
+      select: { role: true, permissions: true, status: true },
+    });
+    if (!membership || membership.status !== MembershipStatus.ACTIVE) {
+      throw new ForbiddenException('You are not an active member of this venue.');
+    }
+    const permissions = effectivePermissions(membership.role, membership.permissions);
+    if (!permissions.includes(required)) {
+      throw new ForbiddenException(`Missing venue permission: ${required}`);
+    }
+    attach(req, { venueId, role: membership.role, permissions });
     return true;
   }
+}
+
+function attach(req: { venueAccess?: VenueAccessContext } | undefined, access: VenueAccessContext) {
+  if (req) req.venueAccess = access;
 }

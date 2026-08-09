@@ -12,6 +12,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 
 import { PageInfo } from '../../../common/dto/pagination.input';
 import '../../../common/enums';
+import { daysCredited } from '../lifecycle.util';
 
 function num(v: Decimal): number {
   return Number(v.toString());
@@ -36,6 +37,17 @@ export class MembershipPlanModel {
   @Field() isActive!: boolean;
   @Field(() => Int, { description: 'Active subscribers on this plan.' })
   activeSubscribers!: number;
+  @Field(() => Int, {
+    description: 'Running, upcoming, paused or pending members — any of these blocks deleting.',
+  })
+  liveSubscribers!: number;
+  @Field(() => Int, {
+    description:
+      'Everyone who ever subscribed. Above zero means deleting would bin payment history.',
+  })
+  totalSubscribers!: number;
+  @Field({ description: 'Whether this plan can be deleted outright (nobody ever bought it).' })
+  canDelete!: boolean;
   @Field() createdAt!: Date;
 }
 
@@ -57,7 +69,14 @@ export class SubscriptionModel {
   @Field(() => ID) planId!: string;
   @Field() planName!: string;
   @Field(() => MembershipDuration) duration!: MembershipDuration;
-  @Field(() => Float) price!: number;
+  @Field(() => Float, { description: 'What this term costs — the price they bought at.' })
+  price!: number;
+  @Field(() => Float, {
+    description: "The plan's price today. Differs from `price` when it changed mid-term.",
+  })
+  planPrice!: number;
+  @Field(() => Int, { description: 'Days this term runs for; a renewal adds this many.' })
+  validityDays!: number;
   @Field(() => Int, { description: 'Session length in minutes.' })
   sessionMinutes!: number;
   @Field({ description: 'The member\'s daily start time ("HH:mm").' })
@@ -76,7 +95,12 @@ export class SubscriptionModel {
   @Field({ description: 'ACTIVE and within 7 days of expiry.' })
   expiringSoon!: boolean;
   @Field() startedAt!: Date;
-  @Field() expiresAt!: Date;
+  @Field({ description: 'Moves out by the paused time when a paused membership resumes.' })
+  expiresAt!: Date;
+  @Field({ nullable: true, description: 'When the current pause started.' })
+  pausedAt?: Date;
+  @Field(() => Int, { description: 'Whole days a running pause has credited so far.' })
+  pausedDays!: number;
   @Field(() => [SubscriptionPaymentModel], { description: 'Payment + renewal history.' })
   payments!: SubscriptionPaymentModel[];
 
@@ -93,13 +117,21 @@ export class PaginatedSubscriptions {
 export class MembershipStatsModel {
   @Field(() => Int) activeMembers!: number;
   @Field(() => Int) expiringSoon!: number;
-  @Field(() => Float) monthlyRevenue!: number;
+
+  /** Null for callers without `finance:read` — see `VenueBookingSummary.revenueToday`. */
+  @Field(() => Float, {
+    nullable: true,
+    description: "Membership revenue this month. Null unless the caller holds 'finance:read'.",
+  })
+  monthlyRevenue?: number;
+
   @Field(() => Int) renewalRatePct!: number;
 }
 
-type PlanWithCount = PrismaPlan & { _count?: { subscriptions: number } };
-
-export function mapPlan(p: PlanWithCount, activeSubscribers = 0): MembershipPlanModel {
+export function mapPlan(
+  p: PrismaPlan,
+  counts: { active: number; live: number; total: number } = { active: 0, live: 0, total: 0 },
+): MembershipPlanModel {
   return {
     id: p.id,
     venueId: p.venueId,
@@ -114,7 +146,10 @@ export function mapPlan(p: PlanWithCount, activeSubscribers = 0): MembershipPlan
     sports: p.sports,
     highlight: p.highlight ?? undefined,
     isActive: p.isActive,
-    activeSubscribers,
+    activeSubscribers: counts.active,
+    liveSubscribers: counts.live,
+    totalSubscribers: counts.total,
+    canDelete: counts.total === 0,
     createdAt: p.createdAt,
   };
 }
@@ -151,10 +186,15 @@ export function mapSubscription(s: SubscriptionWithRelations, now: Date): Subscr
     planId: s.planId,
     planName: s.plan.name,
     duration: s.plan.duration,
-    price: num(s.plan.price),
-    sessionMinutes: s.plan.sessionMinutes,
+    // Terms come off the SUBSCRIPTION, not the plan: re-pricing or re-timing a plan
+    // must never rewrite what a member already bought. The plan's live price rides
+    // along separately so the console can show "Rs 4,000 → Rs 4,500" at renewal.
+    price: num(s.price),
+    planPrice: num(s.plan.price),
+    validityDays: s.validityDays,
+    sessionMinutes: s.sessionMinutes,
     slotStart: s.slotStart,
-    daysOfWeek: s.plan.daysOfWeek,
+    daysOfWeek: s.daysOfWeek,
     sports: s.plan.sports,
     courtId: s.courtId,
     courtName: s.court.name,
@@ -165,6 +205,8 @@ export function mapSubscription(s: SubscriptionWithRelations, now: Date): Subscr
     expiringSoon,
     startedAt: s.startedAt,
     expiresAt: s.expiresAt,
+    pausedAt: s.pausedAt ?? undefined,
+    pausedDays: daysCredited(s.pausedAt, now),
     payments: (s.payments ?? []).map(mapPayment),
     createdAt: s.createdAt,
   };
