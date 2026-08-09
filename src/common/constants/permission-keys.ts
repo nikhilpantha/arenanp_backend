@@ -344,6 +344,11 @@ export const PERMISSION_CATALOG = {
       description: 'View revenue, settlements and reports',
     },
     {
+      key: 'venue.finance.manage',
+      name: 'Record Finance',
+      description: 'Record expenses and close the cash day',
+    },
+    {
       key: 'venue.finance.payout',
       name: 'Manage Payouts',
       description: 'Request and reconcile payouts',

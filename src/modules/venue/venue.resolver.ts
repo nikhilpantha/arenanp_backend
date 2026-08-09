@@ -100,7 +100,7 @@ export class VenueResolver {
     description: 'Update editable venue profile fields. Requires the venue:edit permission.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue:edit')
+  @RequireVenuePermission('venue.edit')
   updateVenueProfile(@Args('input') input: UpdateVenueProfileInput): Promise<VenueModel> {
     return this.service.updateProfile(input);
   }
@@ -111,7 +111,7 @@ export class VenueResolver {
       "Replace the venue's sports + courts wholesale — every court is deleted and recreated, taking its bookings with it. Setup only. To change a live venue's courts use addCourt / updateCourt / removeCourt. Requires the venue:edit permission.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue:edit')
+  @RequireVenuePermission('venue.edit')
   setVenueServices(@Args('input') input: SetVenueServicesInput): Promise<VenueModel> {
     return this.service.setServices(input);
   }
@@ -122,7 +122,7 @@ export class VenueResolver {
       'Change one court in place — price, slot length, attributes, or whether it takes bookings. A new price applies to bookings made from now on; bookings already taken keep the price they were booked at, so past takings and Finance are untouched. Requires the venue:edit permission.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue:edit')
+  @RequireVenuePermission('venue.edit')
   updateCourt(@Args('input') input: UpdateCourtInput): Promise<VenueCourt> {
     return this.service.updateCourt(input);
   }
@@ -133,7 +133,7 @@ export class VenueResolver {
       'Add one court to an existing venue without disturbing the others. Requires the venue:edit permission.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue:edit')
+  @RequireVenuePermission('venue.edit')
   addCourt(@Args('input') input: AddCourtInput): Promise<VenueModel> {
     return this.service.addCourt(input);
   }
@@ -144,7 +144,7 @@ export class VenueResolver {
       'Delete a court. Refused once it has bookings or memberships — those cascade, so removing it would erase the income it earned. Switch the court off instead. Requires the venue:edit permission.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('venue:edit')
+  @RequireVenuePermission('venue.edit')
   removeCourt(@Args('input') input: RemoveCourtInput): Promise<VenueModel> {
     return this.service.removeCourt(input);
   }

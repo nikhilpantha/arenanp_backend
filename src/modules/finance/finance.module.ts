@@ -6,6 +6,7 @@ import { FinanceRepository } from './finance.repository';
 import { FinanceResolver } from './finance.resolver';
 import { FinanceService } from './finance.service';
 import { SalaryService } from './salary.service';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Venue-owner finance: live income / give-away / profit aggregations over the
@@ -14,6 +15,7 @@ import { SalaryService } from './salary.service';
  * end-of-day cash reconciliation. Reads need `finance:read`, writes `finance:write`.
  */
 @Module({
+  imports: [RbacModule],
   providers: [
     FinanceResolver,
     FinanceService,

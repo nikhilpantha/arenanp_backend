@@ -2753,7 +2753,7 @@ type Query {
   venueBooking(bookingId: ID!, venueId: ID!): BookingModel!
 
   """
-  Today's booking overview numbers for a venue. `revenueToday` is omitted unless the caller holds 'finance:read'.
+  Today's booking overview numbers for a venue. `revenueToday` is omitted unless the caller holds 'venue.finance.view'.
   """
   venueBookingSummary(venueId: ID!): VenueBookingSummary!
 
@@ -2815,7 +2815,7 @@ type Query {
   venueMembershipPlans(input: ListMembershipPlansInput!): [MembershipPlanModel!]!
 
   """
-  Venue membership KPIs. `monthlyRevenue` is omitted unless the caller holds 'finance:read'.
+  Venue membership KPIs. `monthlyRevenue` is omitted unless the caller holds 'venue.finance.view'.
   """
   venueMembershipStats(venueId: ID!): MembershipStatsModel!
 
