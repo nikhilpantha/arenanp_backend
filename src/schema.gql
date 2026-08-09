@@ -2127,7 +2127,7 @@ type Mutation {
   signOutEverywhere: Boolean!
 
   """
-  Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. The VENUE capability is granted at signup and untouched here.
+  Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. Requires an approved — not suspended — VENUE capability.
   """
   submitVenue(input: SubmitVenueInput!): VenueModel!
   suspendStaff(userId: ID!): String!

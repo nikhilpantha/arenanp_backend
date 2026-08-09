@@ -1,7 +1,13 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { GqlExecutionContext } from '@nestjs/graphql';
-import { MembershipStatus, UserRole, VenueMemberRole } from '@prisma/client';
+import {
+  CapabilityStatus,
+  CapabilityType,
+  MembershipStatus,
+  UserRole,
+  VenueMemberRole,
+} from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -58,6 +64,18 @@ export class VenuePermissionGuard implements CanActivate {
     }
 
     if (!venueId) throw new ForbiddenException('No venue specified for this action.');
+
+    // A suspended VENUE capability is the platform withdrawing someone's ability
+    // to operate venues at all, so it outranks whatever their membership says.
+    // Without this check, "Suspend venue access" only revoked their tokens and
+    // they were back in on the next sign-in.
+    //
+    // Only bites accounts that actually hold the capability: venue employees
+    // have no VENUE capability of their own and are unaffected.
+    const venueCapability = user.capabilities.find((c) => c.type === CapabilityType.VENUE);
+    if (venueCapability?.status === CapabilityStatus.SUSPENDED) {
+      throw new ForbiddenException('Your venue access has been suspended by the platform.');
+    }
 
     const membership = await this.prisma.venueMembership.findUnique({
       where: { venueId_userId: { venueId, userId: user.id } },

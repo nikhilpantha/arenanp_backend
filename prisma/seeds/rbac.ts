@@ -55,6 +55,17 @@ async function reconcilePlatformStaff(): Promise<void> {
   console.log(
     `  ✓ ${created} staff record(s) created, isStaff resynced (+${promoted.count} / -${demoted.count})`,
   );
+
+  // Super admins resolve to the wildcard before grants are ever read, so any
+  // rows stored against them are dead weight. Worse, they are a trap: demoting
+  // the account would turn a set nobody has reviewed into its real permissions.
+  // (Demotion clears grants too — this is the belt to that pair of braces.)
+  const stale = await prisma.staffPermission.deleteMany({
+    where: { user: { role: UserRole.SUPER_ADMIN } },
+  });
+  if (stale.count > 0) {
+    console.log(`  ✓ ${stale.count} redundant super-admin grant(s) removed`);
+  }
 }
 
 /**

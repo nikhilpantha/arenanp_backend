@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RequireVenueApproved } from '../../common/decorators/capability.decorator';
 import { RequireVenuePermission } from '../../common/decorators/venue-permission.decorator';
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
 import type { AuthUser } from '../../common/types/auth-context';
@@ -79,10 +80,13 @@ export class VenueResolver {
     return this.service.myMemberships(user.id);
   }
 
+  // Granted APPROVED at venue signup, so this blocks exactly one case: an owner
+  // the platform has SUSPENDED opening a fresh venue to carry on under.
+  @RequireVenueApproved()
   @Mutation(() => VenueModel, {
     name: 'submitVenue',
     description:
-      'Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. The VENUE capability is granted at signup and untouched here.',
+      'Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. Requires an approved — not suspended — VENUE capability.',
   })
   submitVenue(
     @Args('input') input: SubmitVenueInput,
