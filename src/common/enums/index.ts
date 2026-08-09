@@ -17,6 +17,7 @@ import {
   OfferAudience,
   OfferDiscountType,
   OfferTrigger,
+  PayBasis,
   PaymentProvider,
   PaymentStatus,
   RefundStatus,
@@ -56,6 +57,12 @@ registerEnumType(VenueMemberRole, {
   name: 'VenueMemberRole',
   description:
     "A user's role within a single venue (venue-scoped RBAC): OWNER, MANAGER, FRONT_DESK, STAFF, COACH.",
+});
+
+registerEnumType(PayBasis, {
+  name: 'PayBasis',
+  description:
+    "How a staff member's pay is reckoned. MONTHLY is the only basis whose owed amount the system can work out unaided; DAILY and PER_SESSION need a count the owner enters when settling up.",
 });
 
 registerEnumType(MembershipStatus, {

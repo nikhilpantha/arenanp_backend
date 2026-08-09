@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -9,6 +9,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthUser } from '../../common/types/auth-context';
 
 import { AuthPayload } from '../auth/dto/auth-payload';
+import { SessionResponder, type GqlContext } from '../auth/session-responder.service';
 import { VenueInvitationsService } from './venue-invitations.service';
 import {
   CreateInvitationResult,
@@ -24,7 +25,10 @@ import {
 
 @Resolver(() => VenueInvitation)
 export class VenueInvitationsResolver {
-  constructor(private readonly service: VenueInvitationsService) {}
+  constructor(
+    private readonly service: VenueInvitationsService,
+    private readonly sessions: SessionResponder,
+  ) {}
 
   // ─── Admin-side ────────────────────────────────────────────────────────
 
@@ -89,7 +93,11 @@ export class VenueInvitationsResolver {
       'Set the new account’s password, mark the invitation accepted, and return an access token so the user is signed in immediately.',
   })
   @Public()
-  accept(@Args('input') input: AcceptVenueInvitationInput): Promise<AuthPayload> {
-    return this.service.accept(input);
+  async accept(
+    @Args('input') input: AcceptVenueInvitationInput,
+    @Context() ctx: GqlContext,
+  ): Promise<AuthPayload> {
+    const { user, token } = await this.service.accept(input);
+    return this.sessions.open(user, token, ctx);
   }
 }

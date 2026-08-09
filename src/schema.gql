@@ -15,6 +15,14 @@ input AcceptVenueInvitationInput {
   token: String!
 }
 
+input AddCourtInput {
+  court: VenueCourtInput!
+
+  """Sport slug. The venue gains the sport if it did not offer it yet."""
+  sportSlug: String!
+  venueId: ID!
+}
+
 input AdditionalServiceInput {
   name: String!
   price: Float
@@ -513,6 +521,14 @@ input ApproveRefundInput {
   refundId: ID!
 }
 
+input ApproveSubscriptionInput {
+  """Amount collected now; defaults to the price they requested at."""
+  amountPaid: Float
+  paymentMethod: PaymentProvider
+  subscriptionId: ID!
+  venueId: ID!
+}
+
 input ApproveTournamentInput {
   """Optional internal note."""
   note: String
@@ -527,9 +543,29 @@ input ApproveVenueVerificationInput {
 
 type AuthPayload {
   accessToken: String!
+
+  """When the access token dies. Refresh before this to stay signed in."""
   expiresAt: DateTime!
+
+  """
+  When the session ends if it goes unused. Every refresh pushes this forward, so an active user is never signed out.
+  """
+  refreshExpiresAt: DateTime
+
+  """
+  Refresh token, for clients that store it themselves (the phone app). Null on web, where it is set as an httpOnly cookie the page cannot read.
+  """
+  refreshToken: String
   tokenType: String!
   user: User!
+}
+
+"""
+Who did something to a booking. Names come from the venue's own staff, so a removed employee still reads as themselves — the User row survives, only their seat goes.
+"""
+type BookingActorModel {
+  id: ID!
+  name: String
 }
 
 input BookingExtraInput {
@@ -547,9 +583,13 @@ type BookingExtraModel {
 """A court booking as managed from the venue panel."""
 type BookingModel {
   amountPaid: Float!
+  cancelledBy: BookingActorModel
   courtId: ID!
   courtName: String!
   createdAt: DateTime!
+
+  """Who created this booking."""
+  createdBy: BookingActorModel
   customerId: ID
   customerName: String
   customerPhone: String
@@ -569,6 +609,9 @@ type BookingModel {
   sport: SportStub!
   startAt: DateTime!
   status: BookingStatus!
+
+  """Every state change, oldest first, with whoever made it."""
+  statusEvents: [BookingStatusEventModel!]!
   subtotal: Float!
   total: Float!
 }
@@ -611,6 +654,16 @@ enum BookingStatusAction {
   CHECKED_IN
   COMPLETED
   NO_SHOW
+}
+
+"""One recorded change of state, and who made it."""
+type BookingStatusEventModel {
+  actor: BookingActorModel
+  createdAt: DateTime!
+  fromStatus: BookingStatus
+  id: ID!
+  note: String
+  toStatus: BookingStatus!
 }
 
 type BookingTrendPoint {
@@ -677,6 +730,58 @@ enum CapabilityType {
   VENUE
 }
 
+input CashDayInput {
+  """Business day "yyyy-mm-dd"; defaults to today."""
+  date: String
+  venueId: ID!
+}
+
+"""
+What the desk should expect to count for a business day, with the breakdown.
+"""
+type CashDayPreview {
+  alreadyClosed: Boolean!
+  businessDate: String!
+
+  """Cash collected (bookings + memberships) that day."""
+  cashIn: Float!
+
+  """Cash paid out (expenses) that day."""
+  cashOut: Float!
+  expectedCash: Float!
+  openingFloat: Float!
+  reconciliation: CashReconciliationModel
+}
+
+type CashReconciliationModel {
+  businessDate: DateTime!
+  closedAt: DateTime!
+  countedCash: Float!
+  expectedCash: Float!
+  id: ID!
+  notes: String
+  openingFloat: Float!
+  variance: Float!
+  venueId: ID!
+}
+
+input ChangePasswordInput {
+  """The password they are signing in with today."""
+  currentPassword: String!
+
+  """The new password. Must not be the current one."""
+  newPassword: String!
+}
+
+input CloseCashDayInput {
+  """Business day being closed, "yyyy-mm-dd"."""
+  businessDate: String!
+  countedCash: Float!
+  notes: String
+  openingFloat: Float = 0
+  venueId: ID!
+}
+
 """A venue-owner block on bookings — one court or the whole venue."""
 type ClosureModel {
   """Blocked court; null = whole venue."""
@@ -720,6 +825,14 @@ enum CourtEnvironment {
   INDOOR
   OUTDOOR
   ROOFED
+}
+
+type CourtRevenue {
+  bookings: Int!
+  courtId: ID!
+  courtName: String!
+  revenue: Float!
+  sport: String
 }
 
 """A single bookable time window for a court."""
@@ -781,6 +894,18 @@ input CreateClosureInput {
 
   """Block start (absolute instant)."""
   startAt: DateTime!
+  venueId: ID!
+}
+
+input CreateExpenseInput {
+  amount: Float!
+  category: ExpenseCategory!
+  description: String
+
+  """Date the cost applies to (bucketed by day)."""
+  incurredAt: DateTime!
+  paymentMethod: PaymentProvider
+  vendor: String
   venueId: ID!
 }
 
@@ -846,7 +971,9 @@ input CreateOfferInput {
   """Total redemptions allowed; null = unlimited."""
   usageLimit: Int
   validFrom: DateTime!
-  validUntil: DateTime!
+
+  """Omit for an open-ended offer (runs until switched off)."""
+  validUntil: DateTime
   venueId: ID!
 }
 
@@ -963,6 +1090,81 @@ input CreateVenueCustomerInput {
   venueId: ID!
 }
 
+input CreateVenueStaffInput {
+  """
+  Set once the owner has confirmed they mean to give an existing Arena NP account access to this venue. Without it, a mobile that matches someone else's account is refused rather than acted on.
+  """
+  attachExistingConfirmed: Boolean
+  fullName: String!
+
+  """
+  Starter password for a newly minted login. Omit and the server generates a strong one. Ignored entirely when attaching an existing account — that person keeps their own password.
+  """
+  password: String
+
+  """
+  Their real Nepali mobile. Also how we recognise an account they already have.
+  """
+  phoneNumber: String!
+
+  """Switch a suspended seat back on instead of refusing as a duplicate."""
+  reactivate: Boolean
+  role: VenueMemberRole!
+  venueId: ID!
+}
+
+type CreateVenueStaffResult {
+  """
+  Only present when a new login was minted. Never for an attached account.
+  """
+  credentials: StaffCredentials
+  member: VenueStaffMember!
+  outcome: StaffCreateOutcome!
+}
+
+"""One "most booked" entry — a court, a sport, a slot."""
+type CustomerFavouriteModel {
+  games: Int!
+  label: String!
+}
+
+"""Visits starting in one Nepal-time hour of the day (0–23)."""
+type CustomerHourBucketModel {
+  games: Int!
+  hour: Int!
+}
+
+"""Loyalty standing under the venue's every-Nth free-game offer."""
+type CustomerLoyaltyModel {
+  """The venue runs an every-Nth loyalty offer right now."""
+  configured: Boolean!
+
+  """Games per free game (N)."""
+  every: Int
+
+  """Qualifying games in the current cycle count."""
+  gamesPlayed: Int!
+  offerId: ID
+
+  """A free game is available to redeem now."""
+  ready: Boolean!
+
+  """Free games already given to this customer."""
+  redeemed: Int!
+
+  """Games still to play before the next free one."""
+  toNext: Int!
+}
+
+"""One Nepal calendar month of play, for the trend strip."""
+type CustomerMonthModel {
+  games: Int!
+
+  """Nepal month as "YYYY-MM"."""
+  month: String!
+  spend: Float!
+}
+
 """Who holds a booking — TEAM, INDIVIDUAL or CLUB."""
 enum CustomerType {
   CLUB
@@ -997,6 +1199,155 @@ enum DisputeStatus {
   OPEN
   REJECTED
   RESOLVED
+}
+
+"""
+Operating-cost category for a venue expense: RENT, SALARY, UTILITIES, EQUIPMENT, MAINTENANCE, MARKETING, SUPPLIES, TAX or OTHER.
+"""
+enum ExpenseCategory {
+  EQUIPMENT
+  MAINTENANCE
+  MARKETING
+  OTHER
+  RENT
+  SALARY
+  SUPPLIES
+  TAX
+  UTILITIES
+}
+
+"""One expense category and what it cost in the period."""
+type ExpenseCategoryTotal {
+  amount: Float!
+  category: String!
+  count: Int!
+}
+
+type ExpenseModel {
+  amount: Float!
+  category: String!
+  createdAt: DateTime!
+  currency: String!
+  description: String
+  id: ID!
+  incurredAt: DateTime!
+  paymentMethod: String
+  vendor: String
+  venueId: ID!
+}
+
+"""How busy and how valuable the venue was over the period."""
+type FinancePerformance {
+  avgBookingValue: Float!
+  bookedHours: Float!
+  byCourt: [CourtRevenue!]!
+  bySport: [SportRevenue!]!
+  capacityHours: Float!
+
+  """Booked court-hours ÷ available court-hours, %."""
+  occupancyPct: Float!
+  peakHours: [PeakHourPoint!]!
+
+  """Share of period customers with more than one booking."""
+  repeatRatePct: Float!
+  topCustomers: [TopCustomer!]!
+}
+
+input FinanceRangeInput {
+  """Custom start "yyyy-mm-dd" (inclusive); needs `to` to apply."""
+  from: String
+  preset: FinanceRangePreset = MONTH
+
+  """Custom end "yyyy-mm-dd" (inclusive)."""
+  to: String
+  venueId: ID!
+}
+
+"""
+Finance window: TODAY, TOMORROW (money expected on tomorrow's bookings), WEEK (7d), MONTH (30d), YEAR, or ALL (from the venue's first activity).
+"""
+enum FinanceRangePreset {
+  ALL
+  MONTH
+  TODAY
+  TOMORROW
+  WEEK
+  YEAR
+}
+
+"""
+A venue's money picture for a period: income received across every rail, what was given away, expenses, and the resulting net profit.
+"""
+type FinanceSummary {
+  """Add-on revenue (already counted inside bookingIncome)."""
+  addOnRevenue: Float!
+  bookingIncome: Float!
+
+  """Non-cancelled bookings in the period."""
+  bookingsCount: Int!
+  cashIncome: Float!
+  digitalIncome: Float!
+
+  """Promo/loyalty discounts given (informational, not re-deducted)."""
+  discountsGiven: Float!
+
+  """Expense split, biggest first."""
+  expensesByCategory: [ExpenseCategoryTotal!]!
+  expensesTotal: Float!
+  freeGames: FreeGameStat!
+
+  """List price before discounts. gross − discountsGiven = revenue."""
+  grossRevenue: Float!
+
+  """Total money received = bookings + memberships."""
+  income: Float!
+  membershipIncome: Float!
+
+  """income − expenses."""
+  netProfit: Float!
+
+  """Billed but not yet collected (receivables)."""
+  outstanding: Float!
+
+  """Money taken on bookings the customer never turned up for."""
+  paidNoShows: Float!
+
+  """
+  Billed for the period = collected + outstanding. Already net of discounts.
+  """
+  revenue: Float!
+}
+
+input FinanceTrendInput {
+  """Custom start "yyyy-mm-dd" (inclusive); needs `to` to apply."""
+  from: String
+  granularity: TrendGranularity
+  preset: FinanceRangePreset = MONTH
+
+  """Custom end "yyyy-mm-dd" (inclusive)."""
+  to: String
+  venueId: ID!
+}
+
+type FinanceTrendPoint {
+  bookings: Int!
+
+  """Bucket start, "yyyy-mm-dd"."""
+  date: String!
+  expenses: Float!
+  income: Float!
+
+  """Human label for the bucket, e.g. "7 Aug" or "Aug 2026"."""
+  label: String!
+
+  """income − expenses for this bucket."""
+  profit: Float!
+}
+
+"""Loyalty free games redeemed and the play value forgone."""
+type FreeGameStat {
+  count: Int!
+  forgoneValue: Float!
 }
 
 """Pre-form check the public setup page calls to validate the token."""
@@ -1142,6 +1493,14 @@ input ListClosuresInput {
   venueId: ID!
 }
 
+input ListExpensesInput {
+  category: ExpenseCategory
+  from: String
+  preset: FinanceRangePreset = MONTH
+  to: String
+  venueId: ID!
+}
+
 input ListMembershipPlansInput {
   """Only plans that are currently active."""
   activeOnly: Boolean
@@ -1170,6 +1529,26 @@ input ListSubscriptionsInput {
 
   """Filter by status. Omit to list everything except CANCELLED."""
   status: SubscriptionStatus
+  venueId: ID!
+}
+
+input ListTransactionsInput {
+  category: ExpenseCategory
+
+  """Custom start "yyyy-mm-dd" (inclusive); needs `to` to apply."""
+  from: String
+  kinds: [TransactionKind!]
+  method: PaymentProvider
+  page: Int = 1
+  pageSize: Int = 25
+  preset: FinanceRangePreset = MONTH
+
+  """Matches customer, vendor, note, category or court."""
+  search: String
+  sort: TransactionSort = DATE_DESC
+
+  """Custom end "yyyy-mm-dd" (inclusive)."""
+  to: String
   venueId: ID!
 }
 
@@ -1321,6 +1700,9 @@ enum MembershipDuration {
 type MembershipPlanModel {
   """Active subscribers on this plan."""
   activeSubscribers: Int!
+
+  """Whether this plan can be deleted outright (nobody ever bought it)."""
+  canDelete: Boolean!
   createdAt: DateTime!
   daysOfWeek: [String!]!
   description: String
@@ -1328,12 +1710,22 @@ type MembershipPlanModel {
   highlight: String
   id: ID!
   isActive: Boolean!
+
+  """
+  Running, upcoming, paused or pending members — any of these blocks deleting.
+  """
+  liveSubscribers: Int!
   name: String!
   price: Float!
 
   """Session length in minutes (e.g. 60 = 1 hour)."""
   sessionMinutes: Int!
   sports: [String!]!
+
+  """
+  Everyone who ever subscribed. Above zero means deleting would bin payment history.
+  """
+  totalSubscribers: Int!
   validityDays: Int!
   venueId: ID!
 
@@ -1345,7 +1737,11 @@ type MembershipPlanModel {
 type MembershipStatsModel {
   activeMembers: Int!
   expiringSoon: Int!
-  monthlyRevenue: Float!
+
+  """
+  Membership revenue this month. Null unless the caller holds 'finance:read'.
+  """
+  monthlyRevenue: Float
   renewalRatePct: Int!
 }
 
@@ -1368,6 +1764,11 @@ type Mutation {
   Set the new account’s password, mark the invitation accepted, and return an access token so the user is signed in immediately.
   """
   acceptVenueInvitation(input: AcceptVenueInvitationInput!): AuthPayload!
+
+  """
+  Add one court to an existing venue without disturbing the others. Requires the venue:edit permission.
+  """
+  addCourt(input: AddCourtInput!): VenueModel!
 
   """Approve a pending organizer-verification request."""
   adminApproveOrganizerVerification(input: ApproveOrganizerVerificationInput!): OrganizerVerificationRequestModel!
@@ -1474,9 +1875,24 @@ type Mutation {
   adminUpdateVenueVerificationStatus(input: UpdateVenueVerificationStatusInput!): AdminVenue!
 
   """
+  Approve a player's membership request: re-checks the plan is still on sale and the slot is still free, then activates it and records the first payment.
+  """
+  approveSubscription(input: ApproveSubscriptionInput!): SubscriptionModel!
+
+  """
   Cancel one of your own bookings (only before it reaches a terminal state).
   """
   cancelMyBooking(input: CancelMyBookingInput!): PlayerBookingModel!
+
+  """
+  Change your own password, proving the current one. Returns a fresh session, because the change invalidates every token including the one that made this call.
+  """
+  changeMyPassword(input: ChangePasswordInput!): AuthPayload!
+
+  """
+  Close a business day: snapshot expected cash and record the physical count.
+  """
+  closeVenueCashDay(input: CloseCashDayInput!): CashReconciliationModel!
 
   """
   Complete a booking with add-on extras and final payment (writes a status event).
@@ -1514,6 +1930,14 @@ type Mutation {
   """Create (or reuse, by phone) a venue customer."""
   createVenueCustomer(input: CreateVenueCustomerInput!): VenueCustomerModel!
 
+  """Record an operating expense."""
+  createVenueExpense(input: CreateExpenseInput!): ExpenseModel!
+
+  """
+  Add someone to the staff: mints a login for a new number, or (once confirmed) gives an existing Arena NP account a seat.
+  """
+  createVenueStaff(input: CreateVenueStaffInput!): CreateVenueStaffResult!
+
   """
   Decline (cancel) a pending online booking. Legacy: player court bookings now confirm instantly, so this only applies to remaining PENDING_PAYMENT rows.
   """
@@ -1524,6 +1948,9 @@ type Mutation {
 
   """Delete a membership plan."""
   deleteMembershipPlan(planId: ID!, venueId: ID!): MembershipPlanModel!
+
+  """Delete an operating expense."""
+  deleteVenueExpense(expenseId: ID!, venueId: ID!): ExpenseModel!
 
   """Delete a venue offer."""
   deleteVenueOffer(offerId: ID!, venueId: ID!): OfferModel!
@@ -1538,8 +1965,28 @@ type Mutation {
   """
   loginWithPhone(input: LoginWithPhoneInput!): AuthPayload!
 
+  """
+  Record a salary payment. Writes an expense, so it lands in net profit, the ledger, the category breakdown and the cash-day close with no further work.
+  """
+  recordStaffSalaryPayment(input: RecordStaffSalaryPaymentInput!): ExpenseModel!
+
   """Update a booking’s payment state (paid / pending / partial)."""
   recordVenueBookingPayment(input: RecordBookingPaymentInput!): BookingModel!
+
+  """
+  Trade a refresh token for a new access token, sliding the session deadline forward. Public because the access token it replaces has usually already expired. Web reads the httpOnly cookie; the phone app passes its stored token in the input.
+  """
+  refreshSession(input: RefreshSessionInput): AuthPayload!
+
+  """
+  Delete a court. Refused once it has bookings or memberships — those cascade, so removing it would erase the income it earned. Switch the court off instead. Requires the venue:edit permission.
+  """
+  removeCourt(input: RemoveCourtInput!): VenueModel!
+
+  """
+  Take away the seat. Everything they booked, took payment for or closed keeps their name.
+  """
+  removeVenueStaff(input: RemoveVenueStaffInput!): Boolean!
 
   """Renew a subscription (extends the window + records a payment)."""
   renewSubscription(input: RenewSubscriptionInput!): SubscriptionModel!
@@ -1565,7 +2012,17 @@ type Mutation {
   """
   resetPassword(input: ResetPasswordInput!): Boolean!
 
-  """Pause, resume, cancel or expire a subscription."""
+  """
+  Issue a new starter password for a login this venue minted. Shown once. Not available for someone using their own Arena NP account.
+  """
+  resetVenueStaffPassword(input: ResetVenueStaffPasswordInput!): StaffCredentials!
+
+  """Set or clear what a staff member is paid, and on what basis."""
+  setStaffPayTerms(input: SetStaffPayTermsInput!): Boolean!
+
+  """
+  Pause, resume or cancel a membership. Pausing frees the slot for walk-in bookings but keeps it reserved against other memberships; resuming credits the paused days onto the end date. Expiring happens on the end date by itself, and a pending request is approved with approveSubscription, so neither can be set here.
+  """
   setSubscriptionStatus(input: SetSubscriptionStatusInput!): SubscriptionModel!
 
   """
@@ -1574,19 +2031,34 @@ type Mutation {
   setVenueBookingStatus(input: SetBookingStatusInput!): BookingModel!
 
   """
-  Replace the venue's sports + courts. Requires the venue:edit permission.
+  Replace the venue's sports + courts wholesale — every court is deleted and recreated, taking its bookings with it. Setup only. To change a live venue's courts use addCourt / updateCourt / removeCourt. Requires the venue:edit permission.
   """
   setVenueServices(input: SetVenueServicesInput!): VenueModel!
 
   """
-  Sign the caller out by bumping their tokenVersion. Every previously-issued access token is rejected on the next request.
+  Suspend a seat, or switch it back on. Takes effect on their very next request.
   """
-  signOut: Boolean!
+  setVenueStaffStatus(input: SetVenueStaffStatusInput!): VenueStaffMember!
+
+  """
+  Sign out THIS device: revokes the refresh token it holds and clears the cookie. Other devices stay signed in — use signOutEverywhere for those. Public and idempotent, so it still clears up when the access token has already expired.
+  """
+  signOut(input: RefreshSessionInput): Boolean!
+
+  """
+  Sign out every device: bumps the caller's tokenVersion and revokes all their refresh tokens. For a lost phone, or a shared number.
+  """
+  signOutEverywhere: Boolean!
 
   """
   Add a venue from the dashboard. Creates the venue as PENDING (a super admin must approve the listing before it goes live) + an OWNER membership + its courts/sports. Requires ≥1 sport with ≥1 court. The VENUE capability is granted at signup and untouched here.
   """
   submitVenue(input: SubmitVenueInput!): VenueModel!
+
+  """
+  Change one court in place — price, slot length, attributes, or whether it takes bookings. A new price applies to bookings made from now on; bookings already taken keep the price they were booked at, so past takings and Finance are untouched. Requires the venue:edit permission.
+  """
+  updateCourt(input: UpdateCourtInput!): VenueCourt!
 
   """Update / activate / deactivate a membership plan."""
   updateMembershipPlan(input: UpdateMembershipPlanInput!): MembershipPlanModel!
@@ -1602,10 +2074,16 @@ type Mutation {
   """
   updateVenueBooking(input: UpdateVenueBookingInput!): BookingModel!
 
+  """Edit an operating expense."""
+  updateVenueExpense(input: UpdateExpenseInput!): ExpenseModel!
+
   """
   Update editable venue profile fields. Requires the venue:edit permission.
   """
   updateVenueProfile(input: UpdateVenueProfileInput!): VenueModel!
+
+  """Change a staff member's role."""
+  updateVenueStaff(input: UpdateVenueStaffInput!): VenueStaffMember!
 
   """Verify an OTP and return an access token."""
   verifyOtp(input: VerifyOtpInput!): AuthPayload!
@@ -1662,8 +2140,32 @@ type OfferModel {
   usageCount: Int!
   usageLimit: Int
   validFrom: DateTime!
-  validUntil: DateTime!
+
+  """Null = open-ended; runs until switched off."""
+  validUntil: DateTime
   venueId: ID!
+}
+
+type OfferPerformance {
+  freeGamesForgoneValue: Float!
+  freeGamesRedeemed: Int!
+  offers: [OfferRoi!]!
+  totalDriven: Float!
+  totalGiven: Float!
+}
+
+"""Cost vs. revenue for a single offer over the period."""
+type OfferRoi {
+  code: String
+
+  """Discount + forgone free-game value given on this offer."""
+  givenAmount: Float!
+  offerId: ID!
+  redemptions: Int!
+
+  """Total billed on bookings that used this offer."""
+  revenueDriven: Float!
+  title: String!
 }
 
 """
@@ -1774,6 +2276,12 @@ type PaginatedSubscriptions {
   pageInfo: PageInfo!
 }
 
+type PaginatedTransactions {
+  items: [TransactionRow!]!
+  pageInfo: PageInfo!
+  totals: TransactionTotals!
+}
+
 type PaginatedVenueVerificationRequests {
   items: [VenueVerificationRequestModel!]!
   pageInfo: PageInfo!
@@ -1798,6 +2306,15 @@ type PasswordResetTicket {
 
   """Pass this back to resetPassword. Valid once."""
   resetToken: String!
+}
+
+"""
+How a staff member's pay is reckoned. MONTHLY is the only basis whose owed amount the system can work out unaided; DAILY and PER_SESSION need a count the owner enters when settling up.
+"""
+enum PayBasis {
+  DAILY
+  MONTHLY
+  PER_SESSION
 }
 
 """
@@ -1835,6 +2352,23 @@ type PaymentsOverview {
   refundedTotal: Float!
   venuesOwed: Float!
   venuesSettled: Float!
+}
+
+"""
+Platform-held settlement balance owed to the venue (separate from its own books).
+"""
+type PayoutSummary {
+  lastPaidAt: DateTime
+  onHold: Float!
+  paidOut: Float!
+  pendingPayout: Float!
+}
+
+"""Revenue + booking volume for one hour of the day (0–23, Nepal time)."""
+type PeakHourPoint {
+  bookings: Int!
+  hour: Int!
+  revenue: Float!
 }
 
 """
@@ -1908,6 +2442,15 @@ type PresignedUpload {
   Presigned URL to PUT the file to. Send the same Content-Type header used to request it.
   """
   uploadUrl: String!
+}
+
+input PreviewStaffLoginInput {
+  """What the owner has typed so far — the address follows from it."""
+  fullName: String!
+
+  """Checked against existing accounts once it looks whole."""
+  phoneNumber: String
+  venueId: ID!
 }
 
 """An extra paid/free service a venue offers (equipment, café, …)."""
@@ -2040,7 +2583,7 @@ type Query {
   me: User!
 
   """
-  Resolve a stored object key into a fresh presigned download URL (e.g. to refresh an expired one).
+  Resolve a stored object key into a fresh presigned download URL (e.g. to refresh an expired one). Private categories (KYC documents) resolve only for the uploader.
   """
   mediaUrl(key: String!): String
 
@@ -2075,7 +2618,9 @@ type Query {
   """A single booking by id."""
   venueBooking(bookingId: ID!, venueId: ID!): BookingModel!
 
-  """Today's booking overview numbers for a venue."""
+  """
+  Today's booking overview numbers for a venue. `revenueToday` is omitted unless the caller holds 'finance:read'.
+  """
   venueBookingSummary(venueId: ID!): VenueBookingSummary!
 
   """
@@ -2083,20 +2628,49 @@ type Query {
   """
   venueBookings(input: ListVenueBookingsInput!): [BookingModel!]!
 
+  """
+  Expected cash to count for a business day, with the cash-in/out breakdown.
+  """
+  venueCashDayPreview(input: CashDayInput!): CashDayPreview!
+
+  """Closed cash days for a venue over a period."""
+  venueCashReconciliations(input: FinanceRangeInput!): [CashReconciliationModel!]!
+
   """Closures / time blocks for a venue."""
   venueClosures(input: ListClosuresInput!): [ClosureModel!]!
 
   """A single venue customer."""
   venueCustomer(customerId: ID!, venueId: ID!): VenueCustomerModel!
 
-  """A customer's bookings (most recent first), for the detail history."""
-  venueCustomerBookings(customerId: ID!, venueId: ID!): [BookingModel!]!
+  """
+  A page of a customer's bookings (most recent first) — the detail screen lists every game individually.
+  """
+  venueCustomerBookings(customerId: ID!, limit: Int = 50, offset: Int = 0, venueId: ID!): [BookingModel!]!
+
+  """
+  A customer's play history at this venue, aggregated: loyalty standing, spend, reliability and playing preferences.
+  """
+  venueCustomerInsights(customerId: ID!, venueId: ID!): VenueCustomerInsightsModel!
 
   """A customer's memberships (most recent first), for the unified profile."""
   venueCustomerSubscriptions(customerId: ID!, venueId: ID!): [SubscriptionModel!]!
 
   """Search/list a venue's customers (people and teams) with loyalty."""
   venueCustomers(input: ListVenueCustomersInput!): [VenueCustomerModel!]!
+
+  """Expenses for a venue over a period."""
+  venueExpenses(input: ListExpensesInput!): [ExpenseModel!]!
+
+  """Occupancy, revenue by court / sport, peak hours and top customers."""
+  venueFinancePerformance(input: FinanceRangeInput!): FinancePerformance!
+
+  """Income, give-aways, expenses and net profit for a venue over a period."""
+  venueFinanceSummary(input: FinanceRangeInput!): FinanceSummary!
+
+  """
+  Income, expenses, profit and booking volume as a gap-filled series. Bucket width follows `granularity`, or the range length when omitted.
+  """
+  venueFinanceTrend(input: FinanceTrendInput!): [FinanceTrendPoint!]!
 
   """
   A subject's loyalty progress toward a free game (by customer or phone).
@@ -2106,16 +2680,52 @@ type Query {
   """A venue's membership plans."""
   venueMembershipPlans(input: ListMembershipPlansInput!): [MembershipPlanModel!]!
 
-  """Venue membership KPIs (active, expiring, revenue, renewal rate)."""
+  """
+  Venue membership KPIs. `monthlyRevenue` is omitted unless the caller holds 'finance:read'.
+  """
   venueMembershipStats(venueId: ID!): MembershipStatsModel!
+
+  """Per-offer cost vs. revenue driven, plus loyalty free-game give-away."""
+  venueOfferPerformance(input: FinanceRangeInput!): OfferPerformance!
 
   """All offers for a venue (management view), paginated."""
   venueOffers(input: ListVenueOffersInput!): PaginatedOffers!
+
+  """Platform-held settlement balance owed to the venue."""
+  venuePayoutSummary(venueId: ID!): PayoutSummary!
 
   """
   A venue's active membership plans — public, for the player marketplace.
   """
   venuePublicPlans(venueId: ID!): [MembershipPlanModel!]!
+
+  """
+  Bookings with money still owed, largest first — the list behind `outstanding`.
+  """
+  venueReceivables(input: FinanceRangeInput!): [ReceivableRow!]!
+
+  """
+  Who is owed what for a pay period, and what has been paid. Daily and per-session staff report a null `due` until a count is entered — the system does not record attendance and will not pretend to.
+  """
+  venueSalaries(input: VenueSalariesInput!): VenueSalaryPeriod!
+
+  """Everyone with a seat at this venue, owners first."""
+  venueStaff(venueId: ID!): [VenueStaffMember!]!
+
+  """
+  What one staff member did over a period — bookings created, cancellations, money taken, cash days closed. Read from columns already written on every action.
+  """
+  venueStaffActivity(input: VenueStaffActivityInput!): StaffActivity!
+
+  """
+  The email domain this venue's staff logins live under, e.g. "lumbini-futsal.arenanp.com".
+  """
+  venueStaffLoginDomain(venueId: ID!): String!
+
+  """
+  What the add-staff form would do as typed: the address that would be minted, and whether this mobile already belongs to someone.
+  """
+  venueStaffLoginPreview(input: PreviewStaffLoginInput!): StaffLoginPreview!
 
   """A single subscription with its payment history."""
   venueSubscription(subscriptionId: ID!, venueId: ID!): SubscriptionModel!
@@ -2125,11 +2735,28 @@ type Query {
   """
   venueSubscriptions(input: ListSubscriptionsInput!): PaginatedSubscriptions!
 
+  """
+  Every money movement — booking payments, membership payments and expenses — searchable, filterable, sortable and paged. Totals cover the whole filtered set, not the page.
+  """
+  venueTransactions(input: ListTransactionsInput!): PaginatedTransactions!
+
   """Browse approved venues (player marketplace), filtered + paginated."""
   venues(input: BrowseVenuesInput!): PaginatedVenues!
 
   """Validate the token before showing the password-setup form."""
   verifyVenueInvitation(token: String!): InvitationVerification!
+}
+
+"""A booking with money still owed on it."""
+type ReceivableRow {
+  amountPaid: Float!
+  bookingId: ID!
+  courtName: String
+  customerName: String!
+  customerPhone: String
+  outstanding: Float!
+  startAt: DateTime!
+  total: Float!
 }
 
 """Compact booking row for the dashboard recent-bookings table."""
@@ -2159,6 +2786,33 @@ input RecordBookingPaymentInput {
   paymentMethod: PaymentProvider
   paymentStatus: BookingPaymentStatus!
   venueId: ID!
+}
+
+input RecordStaffSalaryPaymentInput {
+  """What was handed over now. Part-payments are expected."""
+  amount: Float!
+  membershipId: ID!
+  note: String
+
+  """When the money changed hands. Defaults to today."""
+  paidAt: DateTime
+  paymentMethod: PaymentProvider
+
+  """Any date inside the period being settled; snapped to its month."""
+  periodStart: DateTime!
+
+  """
+  Days worked or sessions run — the count the system cannot know on its own.
+  """
+  quantity: Float
+  venueId: ID!
+}
+
+input RefreshSessionInput {
+  """
+  Refresh token, for clients that store it themselves (the phone app). Omit on web: the httpOnly cookie is read instead.
+  """
+  refreshToken: String
 }
 
 """
@@ -2195,6 +2849,16 @@ input RejectVenueVerificationInput {
   requestId: ID!
 }
 
+input RemoveCourtInput {
+  courtId: ID!
+  venueId: ID!
+}
+
+input RemoveVenueStaffInput {
+  membershipId: ID!
+  venueId: ID!
+}
+
 input RenewSubscriptionInput {
   amountPaid: Float
   paymentMethod: PaymentProvider
@@ -2225,6 +2889,14 @@ input ResetPasswordInput {
   resetToken: String!
 }
 
+input ResetVenueStaffPasswordInput {
+  membershipId: ID!
+
+  """Omit and the server generates a strong one."""
+  password: String
+  venueId: ID!
+}
+
 type RevenueTrendPoint {
   date: String!
   revenue: Float!
@@ -2241,6 +2913,16 @@ input SetBookingStatusInput {
   venueId: ID!
 }
 
+input SetStaffPayTermsInput {
+  """Null clears the pay terms entirely."""
+  basis: PayBasis
+  membershipId: ID!
+
+  """Per month, per day or per session."""
+  rate: Float
+  venueId: ID!
+}
+
 input SetSubscriptionStatusInput {
   status: SubscriptionStatus!
   subscriptionId: ID!
@@ -2249,6 +2931,14 @@ input SetSubscriptionStatusInput {
 
 input SetVenueServicesInput {
   services: [VenueServiceInput!]!
+  venueId: ID!
+}
+
+input SetVenueStaffStatusInput {
+  membershipId: ID!
+
+  """ACTIVE or SUSPENDED."""
+  status: MembershipStatus!
   venueId: ID!
 }
 
@@ -2352,6 +3042,12 @@ enum SportPricingUnit {
   PER_SLOT
 }
 
+type SportRevenue {
+  bookings: Int!
+  revenue: Float!
+  sport: String!
+}
+
 """
 Compact sport reference embedded in venue / booking / tournament payloads.
 """
@@ -2367,6 +3063,106 @@ type SportUsage {
   courts: Int!
   tournaments: Int!
   venues: Int!
+}
+
+"""A staff member's activity over a period."""
+type StaffActivity {
+  """Bookings they cancelled."""
+  bookingsCancelled: Int!
+
+  """Bookings they created."""
+  bookingsCreated: Int!
+
+  """Bookings they checked in or completed."""
+  bookingsSettled: Int!
+
+  """End-of-day cash counts they closed."""
+  cashDaysClosed: Int!
+
+  """
+  Discounts given on bookings they created — the number an owner watches.
+  """
+  discountsGiven: Float!
+
+  """Start of the window, "yyyy-mm-dd"."""
+  from: String!
+  fullName: String
+
+  """The last thing they did here."""
+  lastActionAt: DateTime
+  membershipId: ID!
+
+  """Bookings they marked as no-shows."""
+  noShowsMarked: Int!
+  paymentCount: Int!
+
+  """Money they took, across every payment they recorded."""
+  paymentsTaken: Float!
+
+  """End of the window (exclusive), "yyyy-mm-dd"."""
+  to: String!
+}
+
+"""
+How a staff seat came to be: a new login was minted, an existing account was attached, or a suspended seat was reactivated.
+"""
+enum StaffCreateOutcome {
+  ATTACHED_EXISTING
+  CREATED_ACCOUNT
+  REACTIVATED
+}
+
+"""A newly minted login. Shown once and never retrievable again."""
+type StaffCredentials {
+  loginEmail: String!
+  password: String!
+}
+
+"""
+What the add-staff form would do if submitted as typed — so the owner sees the login before it exists, and is warned before they hand a stranger's account access to their venue.
+"""
+type StaffLoginPreview {
+  """They already hold a seat at this venue."""
+  alreadyOnStaff: Boolean!
+  existingRole: VenueMemberRole
+  existingStatus: MembershipStatus
+
+  """The address that would be minted. Null when attaching."""
+  loginEmail: String
+
+  """
+  This mobile already has an Arena NP account. Adding them gives THAT account access, and they keep their own password.
+  """
+  phoneBelongsToExistingAccount: Boolean!
+}
+
+"""One staff member's pay position for a period."""
+type StaffSalaryRow {
+  """Null for anyone not on a wage."""
+  basis: PayBasis
+
+  """
+  What is owed for the period. NULL — not zero — for daily and per-session staff until a count is entered, because nothing here records days worked and a confident zero would be a lie.
+  """
+  committed: Float
+
+  """committed − paid, floored at zero. Null whenever `committed` is."""
+  due: Float
+  fullName: String
+  membershipId: ID!
+
+  """Paid against this period so far."""
+  paid: Float!
+
+  """How many payments make up `paid` — advances show as several."""
+  paymentCount: Int!
+
+  """Days worked or sessions run, as entered when settling up."""
+  quantity: Float
+
+  """Per month, per day or per session."""
+  rate: Float
+  role: VenueMemberRole!
 }
 
 input SubmitVenueInput {
@@ -2402,16 +3198,29 @@ type SubscriptionModel {
   customerPhone: String
   daysOfWeek: [String!]!
   duration: MembershipDuration!
+
+  """Moves out by the paused time when a paused membership resumes."""
   expiresAt: DateTime!
 
   """ACTIVE and within 7 days of expiry."""
   expiringSoon: Boolean!
   id: ID!
 
+  """When the current pause started."""
+  pausedAt: DateTime
+
+  """Whole days a running pause has credited so far."""
+  pausedDays: Int!
+
   """Payment + renewal history."""
   payments: [SubscriptionPaymentModel!]!
   planId: ID!
   planName: String!
+
+  """The plan's price today. Differs from `price` when it changed mid-term."""
+  planPrice: Float!
+
+  """What this term costs — the price they bought at."""
   price: Float!
 
   """Session length in minutes."""
@@ -2422,6 +3231,9 @@ type SubscriptionModel {
   sports: [String!]!
   startedAt: DateTime!
   status: SubscriptionStatus!
+
+  """Days this term runs for; a renewal adds this many."""
+  validityDays: Int!
   venueId: ID!
 }
 
@@ -2459,6 +3271,13 @@ input SuspendVenueInput {
   venueId: ID!
 }
 
+type TopCustomer {
+  bookings: Int!
+  customerId: ID
+  name: String!
+  spent: Float!
+}
+
 """
 Lifecycle of a team registration. REGISTERED -> CONFIRMED, or WITHDRAWN / REJECTED.
 """
@@ -2490,12 +3309,106 @@ enum TournamentVisibility {
   UNLISTED
 }
 
+"""Money-movement type in the venue transaction ledger."""
+enum TransactionKind {
+  BOOKING_PAYMENT
+  EXPENSE
+  MEMBERSHIP_PAYMENT
+}
+
+"""One money movement in the venue ledger."""
+type TransactionRow {
+  """Positive = money in, negative = money out."""
+  amount: Float!
+
+  """Expense category, when it is one."""
+  category: String
+
+  """Court, plan or vendor."""
+  counterparty: String
+
+  """What it was — customer, plan or expense description."""
+  description: String!
+  id: ID!
+
+  """BOOKING_PAYMENT | MEMBERSHIP_PAYMENT | EXPENSE."""
+  kind: String!
+  method: String
+  occurredAt: DateTime!
+
+  """Booking id, for linking back."""
+  reference: String
+}
+
+enum TransactionSort {
+  AMOUNT_ASC
+  AMOUNT_DESC
+  DATE_ASC
+  DATE_DESC
+}
+
+"""Totals across every row matching the filter — not just this page."""
+type TransactionTotals {
+  count: Int!
+  moneyIn: Float!
+  moneyOut: Float!
+
+  """moneyIn − moneyOut."""
+  net: Float!
+}
+
+"""Trend bucket width. Omit to auto-pick from the range length."""
+enum TrendGranularity {
+  DAY
+  MONTH
+  WEEK
+}
+
+input UpdateCourtInput {
+  capacity: Int
+  courtId: ID!
+  description: String
+  environment: CourtEnvironment
+
+  """Subset of `Sport.courtFeatures`."""
+  features: [String!]
+
+  """One of `Sport.formats`."""
+  format: String
+
+  """S3 keys from createUploadUrl."""
+  imageUrls: [String!]
+
+  """Off hides it from new bookings; existing ones stand."""
+  isActive: Boolean
+  name: String
+
+  """Applies to new bookings only."""
+  pricePerHour: Float
+  slotMinutes: Int
+
+  """One of `Sport.surfaces`."""
+  surface: String
+  venueId: ID!
+}
+
 input UpdateDisputeStatusInput {
   disputeId: ID!
 
   """Required when transitioning to RESOLVED — shown on the dispute card."""
   resolution: String
   status: DisputeStatus!
+}
+
+input UpdateExpenseInput {
+  amount: Float
+  category: ExpenseCategory
+  description: String
+  expenseId: ID!
+  incurredAt: DateTime
+  paymentMethod: PaymentProvider
+  vendor: String
+  venueId: ID!
 }
 
 input UpdateMembershipPlanInput {
@@ -2642,6 +3555,12 @@ input UpdateVenueProfileInput {
   venueId: ID!
 }
 
+input UpdateVenueStaffInput {
+  membershipId: ID!
+  role: VenueMemberRole
+  venueId: ID!
+}
+
 input UpdateVenueVerificationStatusInput {
   """Required when status is REJECTED."""
   reason: String
@@ -2673,6 +3592,11 @@ type User {
   id: ID!
   isActive: Boolean!
   lastLoginAt: DateTime
+
+  """
+  Their password was set by someone else (a venue owner minting a staff login). Until they choose their own, every other call is refused.
+  """
+  mustChangePassword: Boolean!
   organizerStatus: CapabilityStatus!
   phoneNumber: String!
   role: UserRole!
@@ -2703,8 +3627,12 @@ type VenueAmenityOption {
 """Top-of-screen overview numbers for a venue's bookings."""
 type VenueBookingSummary {
   bookingsToday: Int!
+
+  """Bookings today with money still owed (a count, not a sum)."""
   pendingPayments: Int!
-  revenueToday: Float!
+
+  """Money taken today. Null unless the caller holds 'finance:read'."""
+  revenueToday: Float
 }
 
 """A venue as shown in the player marketplace list."""
@@ -2726,6 +3654,11 @@ type VenueCard {
 
 """A bookable surface (court / ground / pitch) within a venue."""
 type VenueCourt {
+  """
+  Bookings ever taken on this court. Non-zero means deleting it would delete that history and its takings, so the console offers "switch off" instead.
+  """
+  bookingCount: Int!
+
   """Places per slot for CAPACITY sports."""
   capacity: Int
   description: String
@@ -2771,6 +3704,74 @@ input VenueCourtInput {
 
   """One of `Sport.surfaces`."""
   surface: String
+}
+
+"""A customer's play history at one venue, aggregated."""
+type VenueCustomerInsightsModel {
+  """Typical session length, in minutes."""
+  avgSessionMinutes: Int!
+
+  """Average collected per visit."""
+  avgSpendPerVisit: Float!
+  cancelled: Int!
+
+  """Bookings closed as COMPLETED — the loyalty tally."""
+  completed: Int!
+  firstVisitAt: DateTime
+
+  """Games taken free under a loyalty offer."""
+  freeGames: Int!
+
+  """Visits by Nepal start hour — only hours they have actually played."""
+  hourGames: [CustomerHourBucketModel!]!
+
+  """Hours played across all visits."""
+  hoursPlayed: Float!
+  lastVisitAt: DateTime
+
+  """Billed across non-cancelled bookings."""
+  lifetimeBilled: Float!
+
+  """Actually collected — matches the list screen's "spent"."""
+  lifetimePaid: Float!
+  loyalty: CustomerLoyaltyModel!
+  membershipBookings: Int!
+
+  """The last 12 Nepal months, oldest first."""
+  monthlyPlay: [CustomerMonthModel!]!
+
+  """Their next booking, if one is on the books."""
+  nextVisitAt: DateTime
+  noShow: Int!
+  onlineBookings: Int!
+
+  """Billed minus paid: what they still owe."""
+  outstanding: Float!
+
+  """Most-played courts, busiest first."""
+  topCourts: [CustomerFavouriteModel!]!
+
+  """Most-played sports, busiest first."""
+  topSports: [CustomerFavouriteModel!]!
+
+  """Every booking ever made, whatever its state."""
+  totalBookings: Int!
+
+  """Discounts and offers given, lifetime."""
+  totalDiscount: Float!
+
+  """Live bookings still in the future."""
+  upcoming: Int!
+
+  """Games that actually happened (started, not cancelled/no-show)."""
+  visits: Int!
+
+  """Visits per month since the first one — the regularity number."""
+  visitsPerMonth: Float!
+  walkInBookings: Int!
+
+  """Visits per weekday, Sunday-first (7 entries)."""
+  weekdayGames: [Int!]!
 }
 
 """A venue's customer (person or team) — loyalty is keyed by this id."""
@@ -2881,9 +3882,44 @@ type VenueModel {
   name: String!
   openTime: String!
   rejectionReason: String
+
+  """
+  Permanent URL-safe handle, fixed at creation. Staff login emails are minted as `<name>@<slug>.arenanp.com`, so it never changes when the venue is renamed.
+  """
+  slug: String!
   sports: [SportStub!]!
   updatedAt: DateTime!
   verificationStatus: VenueVerificationStatus!
+}
+
+input VenueSalariesInput {
+  """
+  Any date inside the pay period; snapped to the first of that month. Defaults to now.
+  """
+  periodStart: DateTime
+  venueId: ID!
+}
+
+"""A venue's salary position for one pay period."""
+type VenueSalaryPeriod {
+  """Total owed for the period across everyone whose pay can be worked out."""
+  committedTotal: Float!
+
+  """The "you owe staff" figure. Monthly staff only."""
+  dueTotal: Float!
+
+  """Human label, e.g. "August 2026"."""
+  label: String!
+  paidTotal: Float!
+
+  """First day of the period, "yyyy-mm-dd"."""
+  periodStart: String!
+  rows: [StaffSalaryRow!]!
+
+  """
+  People on a daily or per-session rate with no count entered yet — they are excluded from the totals, and the screen says so rather than quietly under-reporting.
+  """
+  uncountedStaff: Int!
 }
 
 """A sport the venue offers, with its courts, slot length and price."""
@@ -2907,6 +3943,58 @@ input VenueServiceInput {
 
   """Sport slug, e.g. "futsal" (matches Sport.slug)."""
   sportSlug: String!
+}
+
+input VenueStaffActivityInput {
+  """Defaults to 30 days ago."""
+  from: DateTime
+  membershipId: ID!
+
+  """Defaults to now."""
+  to: DateTime
+  venueId: ID!
+}
+
+"""One person with a seat at this venue."""
+type VenueStaffMember {
+  createdAt: DateTime!
+  fullName: String
+
+  """The venue is legally theirs — they can never be removed or demoted."""
+  isPrimaryOwner: Boolean!
+
+  """This row is the person looking at the screen."""
+  isSelf: Boolean!
+  lastLoginAt: DateTime
+
+  """
+  The address the venue minted for them. Null for an attached personal account — the owner typed that person's phone number, not their email, and it stays that way.
+  """
+  loginEmail: String
+  membershipId: ID!
+
+  """They haven't replaced the password the owner set for them yet."""
+  mustChangePassword: Boolean!
+
+  """
+  How they are paid. Null for anyone not on a wage — a one-off helper still gets payments recorded, just with nothing expected.
+  """
+  payBasis: PayBasis
+
+  """Per month, per day or per session."""
+  payRate: Float
+
+  """Effective set: role defaults ∪ per-seat overrides."""
+  permissions: [String!]!
+  phoneNumber: String!
+
+  """
+  The venue minted this login, rather than attaching an existing account.
+  """
+  provisionedUser: Boolean!
+  role: VenueMemberRole!
+  status: MembershipStatus!
+  userId: ID!
 }
 
 """Venue KYC documents + business info submitted for verification."""

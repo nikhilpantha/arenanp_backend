@@ -8,13 +8,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
+import type { User } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuthService } from '../auth/auth.service';
 import type { AuthUser } from '../../common/types/auth-context';
-import { mapUserToGraphql } from '../users/dto/user.model';
-import type { AuthPayload } from '../auth/dto/auth-payload';
+import type { SignedAccessToken } from '../auth/auth.service';
 
 import { VenueInvitationsRepository } from './venue-invitations.repository';
 import {
@@ -152,7 +152,9 @@ export class VenueInvitationsService {
   }
 
   /** Public — consumes the invitation and signs the user in. */
-  async accept(input: AcceptVenueInvitationInput): Promise<AuthPayload> {
+  async accept(
+    input: AcceptVenueInvitationInput,
+  ): Promise<{ user: User; token: SignedAccessToken }> {
     const parsed = this.parseToken(input.token);
     if (!parsed) throw new BadRequestException('Malformed token.');
 
@@ -179,11 +181,10 @@ export class VenueInvitationsService {
       throw new BadRequestException(msg);
     }
 
-    const token = await this.auth.issueTokenForUser(user);
-    return {
-      ...token,
-      user: mapUserToGraphql(user),
-    };
+    // The caller turns this into a full session (refresh token + cookie) — accepting
+    // an invitation signs you in, and a 15-minute access token on its own would drop
+    // the new staff member back at the login screen mid-setup.
+    return { user, token: await this.auth.issueTokenForUser(user) };
   }
 
   private async mintToken(): Promise<{ token: string; tokenHash: string }> {

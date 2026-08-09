@@ -87,6 +87,8 @@ model Booking {
   adminNotes String?
 
   payment        Payment?
+  /// Itemised money-movement ledger; `amountPaid` is its cached sum.
+  payments       BookingPayment[]
   statusEvents   BookingStatusEvent[]
   refundRequests RefundRequest[]
   disputes       Dispute[]

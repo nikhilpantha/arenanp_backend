@@ -25,9 +25,11 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { CapabilitiesModule } from './modules/capabilities/capabilities.module';
 import { VenueModule } from './modules/venue/venue.module';
+import { VenueStaffModule } from './modules/venue-staff/venue-staff.module';
 import { VenueInvitationsModule } from './modules/venue-invitations/venue-invitations.module';
 import { SportsModule } from './modules/sports/sports.module';
 import { ClosuresModule } from './modules/closures/closures.module';
+import { FinanceModule } from './modules/finance/finance.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -40,6 +42,10 @@ import { HealthController } from './health.controller';
       validationOptions: { abortEarly: false },
     }),
 
+    // One global per-IP ceiling. Credential endpoints tighten it per handler
+    // with `@ThrottleAuth()` rather than registering a second named limiter —
+    // every configured limiter applies to every route, so a second one would
+    // cap the whole API at the auth budget.
     ThrottlerModule.forRootAsync({
       useFactory: () => [
         {
@@ -62,6 +68,7 @@ import { HealthController } from './health.controller';
     UsersModule,
     AdminModule,
     VenueModule,
+    VenueStaffModule,
     BookingModule,
     DiscoveryModule,
     OffersModule,
@@ -70,6 +77,7 @@ import { HealthController } from './health.controller';
     VenueInvitationsModule,
     SportsModule,
     ClosuresModule,
+    FinanceModule,
   ],
   controllers: [HealthController],
 })

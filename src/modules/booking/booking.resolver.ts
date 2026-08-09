@@ -2,9 +2,10 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { canRead, VenueAccess } from '../../common/decorators/venue-access.decorator';
 import { RequireVenuePermission } from '../../common/decorators/venue-permission.decorator';
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
-import type { AuthUser } from '../../common/types/auth-context';
+import type { AuthUser, VenueAccessContext } from '../../common/types/auth-context';
 
 import { VenueBookingSummary } from './dto/booking-summary.model';
 import {
@@ -35,14 +36,16 @@ export class BookingResolver {
 
   @Query(() => VenueBookingSummary, {
     name: 'venueBookingSummary',
-    description: "Today's booking overview numbers for a venue.",
+    description:
+      "Today's booking overview numbers for a venue. `revenueToday` is omitted unless the caller holds 'finance:read'.",
   })
   @UseGuards(VenuePermissionGuard)
   @RequireVenuePermission('bookings:read')
   venueBookingSummary(
     @Args('venueId', { type: () => ID }) venueId: string,
+    @VenueAccess() access: VenueAccessContext | undefined,
   ): Promise<VenueBookingSummary> {
-    return this.service.summary(venueId);
+    return this.service.summary(venueId, canRead(access, 'finance:read'));
   }
 
   @Query(() => BookingModel, { name: 'venueBooking', description: 'A single booking by id.' })
@@ -112,8 +115,9 @@ export class BookingResolver {
   @RequireVenuePermission('bookings:write')
   recordVenueBookingPayment(
     @Args('input') input: RecordBookingPaymentInput,
+    @CurrentUser() user: AuthUser,
   ): Promise<BookingModel> {
-    return this.service.recordPayment(input);
+    return this.service.recordPayment(input, user.id);
   }
 
   @Mutation(() => BookingModel, {

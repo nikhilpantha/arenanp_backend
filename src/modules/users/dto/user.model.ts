@@ -54,6 +54,12 @@ export class User {
   @Field()
   isActive!: boolean;
 
+  @Field({
+    description:
+      'Their password was set by someone else (a venue owner minting a staff login). Until they choose their own, every other call is refused.',
+  })
+  mustChangePassword!: boolean;
+
   @Field({ nullable: true })
   lastLoginAt?: Date;
 
@@ -81,6 +87,7 @@ export function mapUserToGraphql(user: PrismaUserWithCapabilities): User {
     organizerStatus: statusOf(CapabilityType.ORGANIZER),
     avatarUrl: user.avatarUrl ?? undefined,
     isActive: user.isActive,
+    mustChangePassword: user.mustChangePassword,
     lastLoginAt: user.lastLoginAt ?? undefined,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,

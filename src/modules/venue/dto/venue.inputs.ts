@@ -3,6 +3,7 @@ import { CourtEnvironment } from '@prisma/client';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsIn,
@@ -319,4 +320,113 @@ export class SetVenueServicesInput {
   @ValidateNested({ each: true })
   @Type(() => VenueServiceInput)
   services!: VenueServiceInput[];
+}
+
+/**
+ * Patch ONE existing court, in place.
+ *
+ * The reason this exists rather than owners re-sending `setVenueServices`: that
+ * mutation deletes every court and recreates it, and `Booking.courtId` cascades
+ * — so a price change would take the venue's entire booking history, and its
+ * takings, with it. Here the row keeps its id, so bookings keep their FK and
+ * their money snapshot (`Booking.pricePerHour` / `subtotal` / `total` are
+ * written once at booking time and never recomputed). A new rate therefore
+ * applies to the next booking, never to one already taken.
+ *
+ * Every field is optional: absent means "leave it alone".
+ */
+@InputType()
+export class UpdateCourtInput {
+  /** The owning venue — the permission guard reads this, and it scopes the court. */
+  @Field(() => ID) @IsString() venueId!: string;
+  @Field(() => ID) @IsString() courtId!: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MinLength(1, { message: 'Name it, or leave the name unchanged.' })
+  @MaxLength(80)
+  name?: string;
+
+  @Field(() => Float, { nullable: true, description: 'Applies to new bookings only.' })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  pricePerHour?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  @Min(15)
+  slotMinutes?: number;
+
+  @Field(() => [String], { nullable: true, description: 'Subset of `Sport.courtFeatures`.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(60, { each: true })
+  features?: string[];
+
+  @Field({ nullable: true, description: 'One of `Sport.surfaces`.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  surface?: string;
+
+  @Field({ nullable: true, description: 'One of `Sport.formats`.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  format?: string;
+
+  @Field(() => CourtEnvironment, { nullable: true })
+  @IsOptional()
+  @IsEnum(CourtEnvironment)
+  environment?: CourtEnvironment;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(500)
+  capacity?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @Field({ nullable: true, description: 'Off hides it from new bookings; existing ones stand.' })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @Field(() => [String], { nullable: true, description: 'S3 keys from createUploadUrl.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageUrls?: string[];
+}
+
+/** Add one court to an existing venue, without touching the ones already there. */
+@InputType()
+export class AddCourtInput {
+  @Field(() => ID) @IsString() venueId!: string;
+
+  @Field({ description: 'Sport slug. The venue gains the sport if it did not offer it yet.' })
+  @IsString()
+  sportSlug!: string;
+
+  @Field(() => VenueCourtInput)
+  @ValidateNested()
+  @Type(() => VenueCourtInput)
+  court!: VenueCourtInput;
+}
+
+/** Delete one court. Refused when bookings or subscriptions depend on it. */
+@InputType()
+export class RemoveCourtInput {
+  @Field(() => ID) @IsString() venueId!: string;
+  @Field(() => ID) @IsString() courtId!: string;
 }

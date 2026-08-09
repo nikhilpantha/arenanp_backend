@@ -58,8 +58,13 @@ export class CustomersService {
     return mapCustomer(await this.repo.create(input), 0, false);
   }
 
-  async getCustomerBookings(venueId: string, customerId: string): Promise<BookingModel[]> {
-    const rows = await this.repo.customerBookings(venueId, customerId);
+  async getCustomerBookings(
+    venueId: string,
+    customerId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<BookingModel[]> {
+    const rows = await this.repo.customerBookings(venueId, customerId, limit, offset);
     return rows.map(mapBookingToGraphql);
   }
 

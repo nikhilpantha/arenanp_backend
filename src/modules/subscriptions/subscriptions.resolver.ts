@@ -4,12 +4,14 @@ import { CapabilityType } from '@prisma/client';
 
 import { RequireCapability } from '../../common/decorators/capability.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { canRead, VenueAccess } from '../../common/decorators/venue-access.decorator';
 import { RequireVenuePermission } from '../../common/decorators/venue-permission.decorator';
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
-import type { AuthUser } from '../../common/types/auth-context';
+import type { AuthUser, VenueAccessContext } from '../../common/types/auth-context';
 
 import { SubscriptionsService } from './subscriptions.service';
 import {
+  ApproveSubscriptionInput,
   CreateMembershipPlanInput,
   CreateMySubscriptionInput,
   CreateSubscriptionInput,
@@ -175,7 +177,11 @@ export class SubscriptionsResolver {
 
   @Mutation(() => SubscriptionModel, {
     name: 'setSubscriptionStatus',
-    description: 'Pause, resume, cancel or expire a subscription.',
+    description:
+      'Pause, resume or cancel a membership. Pausing frees the slot for walk-in bookings ' +
+      'but keeps it reserved against other memberships; resuming credits the paused days ' +
+      'onto the end date. Expiring happens on the end date by itself, and a pending ' +
+      'request is approved with approveSubscription, so neither can be set here.',
   })
   @UseGuards(VenuePermissionGuard)
   @RequireVenuePermission('memberships:manage')
@@ -185,17 +191,31 @@ export class SubscriptionsResolver {
     return this.service.setStatus(input);
   }
 
+  @Mutation(() => SubscriptionModel, {
+    name: 'approveSubscription',
+    description:
+      "Approve a player's membership request: re-checks the plan is still on sale and " +
+      'the slot is still free, then activates it and records the first payment.',
+  })
+  @UseGuards(VenuePermissionGuard)
+  @RequireVenuePermission('memberships:manage')
+  approveSubscription(@Args('input') input: ApproveSubscriptionInput): Promise<SubscriptionModel> {
+    return this.service.approveRequest(input);
+  }
+
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
   @Query(() => MembershipStatsModel, {
     name: 'venueMembershipStats',
-    description: 'Venue membership KPIs (active, expiring, revenue, renewal rate).',
+    description:
+      "Venue membership KPIs. `monthlyRevenue` is omitted unless the caller holds 'finance:read'.",
   })
   @UseGuards(VenuePermissionGuard)
   @RequireVenuePermission('bookings:read')
   venueMembershipStats(
     @Args('venueId', { type: () => ID }) venueId: string,
+    @VenueAccess() access: VenueAccessContext | undefined,
   ): Promise<MembershipStatsModel> {
-    return this.service.stats(venueId);
+    return this.service.stats(venueId, canRead(access, 'finance:read'));
   }
 }

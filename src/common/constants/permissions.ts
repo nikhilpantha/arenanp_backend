@@ -15,6 +15,7 @@ export const VENUE_PERMISSIONS = [
   'memberships:manage',
   'teams:manage',
   'finance:read',
+  'finance:write', // record expenses, close cash day
   'finance:payout',
   'staff:manage', // invite / remove staff, change roles
 ] as const;
@@ -34,6 +35,7 @@ export const ROLE_PERMISSIONS: Record<VenueMemberRole, readonly VenuePermission[
     'memberships:manage',
     'teams:manage',
     'finance:read',
+    'finance:write',
   ],
   FRONT_DESK: ['bookings:read', 'bookings:write', 'calendar:manage', 'customers:read'],
   STAFF: ['bookings:read', 'calendar:manage', 'customers:read'],

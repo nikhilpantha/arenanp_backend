@@ -21,37 +21,61 @@ export function assertCourtsMatchSports(
     if (!sport) continue; // resolveSports already reported unknown slugs
 
     for (const [index, court] of (service.courts ?? []).entries()) {
-      const where = `${sport.name} ${sport.unitLabel} ${index + 1}`;
-
-      if (!sport.slotDurations.includes(court.slotMinutes)) {
-        throw new BadRequestException(
-          `${where}: slot length must be ${list(sport.slotDurations.map(String))} minutes.`,
-        );
-      }
-
-      assertDurationBounds(where, sport, court);
-      assertInCatalogue(where, 'surface', court.surface, sport.surfaces);
-      assertInCatalogue(where, 'format', court.format, sport.formats);
-
-      const unknownFeatures = (court.features ?? []).filter(
-        (feature) => !sport.courtFeatures.includes(feature),
-      );
-      if (unknownFeatures.length) {
-        throw new BadRequestException(
-          `${where}: unknown feature(s) ${list(unknownFeatures)}. Allowed: ${list(sport.courtFeatures)}.`,
-        );
-      }
-
-      if (sport.bookingMode === SportBookingMode.CAPACITY && !court.capacity) {
-        throw new BadRequestException(
-          `${where}: set how many places each slot holds — ${sport.name} is sold per place, not per ${sport.unitLabel}.`,
-        );
-      }
+      assertCourtMatchesSport(sport, court, `${sport.name} ${sport.unitLabel} ${index + 1}`);
     }
   }
 }
 
-function assertDurationBounds(where: string, sport: Sport, court: VenueCourtInput): void {
+/**
+ * The same rules for a single court, so editing one from the console cannot
+ * accept what the wizard would reject. `where` names the court in the error —
+ * the wizard uses a position ("Futsal court 2"), the settings screen the court's
+ * own name, because that is what the owner is looking at.
+ */
+export function assertCourtMatchesSport(
+  sport: Sport,
+  court: CourtShape,
+  where: string = sport.unitLabel,
+): void {
+  if (!sport.slotDurations.includes(court.slotMinutes)) {
+    throw new BadRequestException(
+      `${where}: slot length must be ${list(sport.slotDurations.map(String))} minutes.`,
+    );
+  }
+
+  assertDurationBounds(where, sport, court);
+  assertInCatalogue(where, 'surface', court.surface, sport.surfaces);
+  assertInCatalogue(where, 'format', court.format, sport.formats);
+
+  const unknownFeatures = (court.features ?? []).filter(
+    (feature) => !sport.courtFeatures.includes(feature),
+  );
+  if (unknownFeatures.length) {
+    throw new BadRequestException(
+      `${where}: unknown feature(s) ${list(unknownFeatures)}. Allowed: ${list(sport.courtFeatures)}.`,
+    );
+  }
+
+  if (sport.bookingMode === SportBookingMode.CAPACITY && !court.capacity) {
+    throw new BadRequestException(
+      `${where}: set how many places each slot holds — ${sport.name} is sold per place, not per ${sport.unitLabel}.`,
+    );
+  }
+}
+
+/**
+ * What the rules actually read off a court. Loose on purpose: `updateCourt`
+ * checks a patch merged onto the stored row, which is a Prisma Court, not the
+ * wizard's input type.
+ */
+type CourtShape = Pick<VenueCourtInput, 'slotMinutes'> & {
+  surface?: string | null;
+  format?: string | null;
+  features?: string[] | null;
+  capacity?: number | null;
+};
+
+function assertDurationBounds(where: string, sport: Sport, court: CourtShape): void {
   if (sport.minDurationMinutes != null && court.slotMinutes < sport.minDurationMinutes) {
     throw new BadRequestException(
       `${where}: ${sport.name} bookings run at least ${sport.minDurationMinutes} minutes.`,
@@ -67,7 +91,7 @@ function assertDurationBounds(where: string, sport: Sport, court: VenueCourtInpu
 function assertInCatalogue(
   where: string,
   label: string,
-  value: string | undefined,
+  value: string | null | undefined,
   allowed: string[],
 ): void {
   if (!value) return;

@@ -1,4 +1,4 @@
-import type { CapabilityStatus, CapabilityType, UserRole } from '@prisma/client';
+import type { CapabilityStatus, CapabilityType, UserRole, VenueMemberRole } from '@prisma/client';
 
 /** A single capability grant (type + current status) carried on the auth user. */
 export interface CapabilitySnapshot {
@@ -16,6 +16,25 @@ export interface AuthUser {
   phoneNumber: string;
   role: UserRole;
   capabilities: CapabilitySnapshot[];
+  /**
+   * Their password was set by someone else and they haven't replaced it yet.
+   * Read fresh per request (like capabilities), so clearing it takes effect on
+   * the very next call rather than at the next sign-in.
+   */
+  mustChangePassword: boolean;
+}
+
+/**
+ * What `VenuePermissionGuard` resolved for this request, attached to the
+ * request so a handler can gate individual FIELDS on a permission other than
+ * the one that let the operation through. Read it with `@VenueAccess()`.
+ *
+ * Only present on handlers the guard actually ran for.
+ */
+export interface VenueAccessContext {
+  venueId: string;
+  role: VenueMemberRole;
+  permissions: string[];
 }
 
 /**

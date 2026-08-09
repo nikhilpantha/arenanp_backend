@@ -31,8 +31,9 @@ function assertValidOffer(opts: {
   trigger?: OfferTrigger;
   everyGames?: number;
   validFrom?: Date;
-  validUntil?: Date;
+  validUntil?: Date | null;
 }): void {
+  // A null validUntil is open-ended — nothing to order-check.
   if (opts.validFrom && opts.validUntil && opts.validFrom >= opts.validUntil) {
     throw new BadRequestException('validUntil must be after validFrom.');
   }

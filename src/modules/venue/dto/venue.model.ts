@@ -33,6 +33,11 @@ export class VenueCourt {
   capacity?: number;
   @Field({ nullable: true }) description?: string;
   @Field() isActive!: boolean;
+  @Field(() => Int, {
+    description:
+      'Bookings ever taken on this court. Non-zero means deleting it would delete that history and its takings, so the console offers "switch off" instead.',
+  })
+  bookingCount!: number;
   // Stored S3 object keys; presigned to download URLs by VenueCourtResolver.
   imageUrls!: string[];
 }
@@ -41,6 +46,11 @@ export class VenueCourt {
 export class VenueModel {
   @Field(() => ID) id!: string;
   @Field() name!: string;
+  @Field({
+    description:
+      'Permanent URL-safe handle, fixed at creation. Staff login emails are minted as `<name>@<slug>.arenanp.com`, so it never changes when the venue is renamed.',
+  })
+  slug!: string;
   @Field({ nullable: true }) description?: string;
 
   @Field({ nullable: true }) address?: string;
@@ -75,7 +85,11 @@ export class VenueModel {
   @Field() updatedAt!: Date;
 }
 
-type CourtWithSport = PrismaCourt & { sport: PrismaSport };
+export type CourtWithSport = PrismaCourt & {
+  sport: PrismaSport;
+  /** From `_count: { select: { bookings: true } }`. Absent on paths that skip it. */
+  _count?: { bookings: number };
+};
 type VenueSportWithSport = PrismaVenueSport & { sport: PrismaSport };
 export type VenueWithRelations = PrismaVenue & {
   courts: CourtWithSport[];
@@ -115,6 +129,7 @@ export function mapVenueCourt(court: CourtWithSport): VenueCourt {
     capacity: court.capacity ?? undefined,
     description: court.description ?? undefined,
     isActive: court.isActive,
+    bookingCount: court._count?.bookings ?? 0,
     imageUrls: court.imageUrls,
   };
 }
@@ -123,6 +138,7 @@ export function mapVenueToGraphql(venue: VenueWithRelations): VenueModel {
   return {
     id: venue.id,
     name: venue.name,
+    slug: venue.slug,
     description: venue.description ?? undefined,
     address: venue.address ?? undefined,
     city: venue.city ?? undefined,

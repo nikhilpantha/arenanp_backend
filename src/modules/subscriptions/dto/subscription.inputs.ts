@@ -202,6 +202,27 @@ export class RenewSubscriptionInput {
   paymentMethod?: PaymentProvider;
 }
 
+/** Approving a player's request — the moment their first payment is recorded. */
+@InputType()
+export class ApproveSubscriptionInput {
+  @Field(() => ID) @IsString() venueId!: string;
+  @Field(() => ID) @IsString() subscriptionId!: string;
+
+  @Field(() => Float, {
+    nullable: true,
+    description: 'Amount collected now; defaults to the price they requested at.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  amountPaid?: number;
+
+  @Field(() => PaymentProvider, { nullable: true })
+  @IsOptional()
+  @IsEnum(PaymentProvider)
+  paymentMethod?: PaymentProvider;
+}
+
 @InputType()
 export class SetSubscriptionStatusInput {
   @Field(() => ID) @IsString() venueId!: string;

@@ -10,8 +10,11 @@ import { StorageService } from '../../storage/storage.service';
 import { listVenueAmenities, VenueAmenityOption } from './dto/venue-amenity.model';
 import { VenueMembershipModel } from './dto/venue-membership.model';
 import {
+  AddCourtInput,
+  RemoveCourtInput,
   SetVenueServicesInput,
   SubmitVenueInput,
+  UpdateCourtInput,
   UpdateVenueProfileInput,
 } from './dto/venue.inputs';
 import { VenueCourt, VenueModel } from './dto/venue.model';
@@ -100,12 +103,46 @@ export class VenueResolver {
 
   @Mutation(() => VenueModel, {
     name: 'setVenueServices',
-    description: "Replace the venue's sports + courts. Requires the venue:edit permission.",
+    description:
+      "Replace the venue's sports + courts wholesale — every court is deleted and recreated, taking its bookings with it. Setup only. To change a live venue's courts use addCourt / updateCourt / removeCourt. Requires the venue:edit permission.",
   })
   @UseGuards(VenuePermissionGuard)
   @RequireVenuePermission('venue:edit')
   setVenueServices(@Args('input') input: SetVenueServicesInput): Promise<VenueModel> {
     return this.service.setServices(input);
+  }
+
+  @Mutation(() => VenueCourt, {
+    name: 'updateCourt',
+    description:
+      'Change one court in place — price, slot length, attributes, or whether it takes bookings. A new price applies to bookings made from now on; bookings already taken keep the price they were booked at, so past takings and Finance are untouched. Requires the venue:edit permission.',
+  })
+  @UseGuards(VenuePermissionGuard)
+  @RequireVenuePermission('venue:edit')
+  updateCourt(@Args('input') input: UpdateCourtInput): Promise<VenueCourt> {
+    return this.service.updateCourt(input);
+  }
+
+  @Mutation(() => VenueModel, {
+    name: 'addCourt',
+    description:
+      'Add one court to an existing venue without disturbing the others. Requires the venue:edit permission.',
+  })
+  @UseGuards(VenuePermissionGuard)
+  @RequireVenuePermission('venue:edit')
+  addCourt(@Args('input') input: AddCourtInput): Promise<VenueModel> {
+    return this.service.addCourt(input);
+  }
+
+  @Mutation(() => VenueModel, {
+    name: 'removeCourt',
+    description:
+      'Delete a court. Refused once it has bookings or memberships — those cascade, so removing it would erase the income it earned. Switch the court off instead. Requires the venue:edit permission.',
+  })
+  @UseGuards(VenuePermissionGuard)
+  @RequireVenuePermission('venue:edit')
+  removeCourt(@Args('input') input: RemoveCourtInput): Promise<VenueModel> {
+    return this.service.removeCourt(input);
   }
 }
 

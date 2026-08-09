@@ -24,7 +24,8 @@ enum OfferAudience {
 }
 
 /// A venue-created discount. Applies venue-wide to a player booking whose subtotal
-/// meets `minSubtotal`, within [validFrom, validUntil] while `isActive`. PERCENT
+/// meets `minSubtotal`, within [validFrom, validUntil] while `isActive` — a null
+/// `validUntil` means open-ended: the offer runs until switched off. PERCENT
 /// offers take `discountValue`% capped at `maxDiscount`; FLAT offers take a fixed
 /// `discountValue`. An optional `code` makes it a promo code (stored upper-cased,
 /// unique per venue). `usageCount`/`usageLimit` bound total redemptions.
@@ -51,8 +52,9 @@ model Offer {
   code String?
 
   validFrom  DateTime
-  validUntil DateTime
-  isActive   Boolean  @default(true)
+  /// Null = no end date; the offer runs until the owner deactivates it.
+  validUntil DateTime?
+  isActive   Boolean   @default(true)
 
   usageLimit Int?
   usageCount Int  @default(0)

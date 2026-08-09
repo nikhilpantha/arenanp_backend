@@ -4,6 +4,7 @@ import { RequestOtpInput } from './dto/request-otp.input';
 import { VerifyOtpInput } from './dto/verify-otp.input';
 import { LoginWithEmailInput } from './dto/login-with-email.input';
 import { Public } from '../../common/decorators/public.decorator';
+import { ThrottleAuth } from '../../common/decorators/throttle-auth.decorator';
 
 /**
  * Thin REST surface for auth.
@@ -13,6 +14,9 @@ import { Public } from '../../common/decorators/public.decorator';
  *  - Quick smoke testing from cURL / health probes that can't speak GraphQL.
  */
 @Controller('auth')
+// Every route here takes a credential, so the tight limiter applies to all of
+// them — this surface must not be a rate-limit bypass for the GraphQL one.
+@ThrottleAuth()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -28,10 +32,15 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async verifyOtp(@Body() body: VerifyOtpInput) {
     const { user, token } = await this.authService.verifyOtp(body.phoneNumber, body.code);
+    const refresh = await this.authService.openSession(user);
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
       expiresAt: token.expiresAt,
+      // No cookie on this surface: it exists for cURL and integrations, which have
+      // nowhere to keep one. Browsers use the GraphQL mutations, which do set it.
+      refreshToken: refresh.token,
+      refreshExpiresAt: refresh.expiresAt,
       user: {
         id: user.id,
         phoneNumber: user.phoneNumber,
@@ -46,10 +55,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async loginWithEmail(@Body() body: LoginWithEmailInput) {
     const { user, token } = await this.authService.loginWithEmail(body.email, body.password);
+    const refresh = await this.authService.openSession(user);
     return {
       accessToken: token.accessToken,
       tokenType: token.tokenType,
       expiresAt: token.expiresAt,
+      refreshToken: refresh.token,
+      refreshExpiresAt: refresh.expiresAt,
       user: {
         id: user.id,
         email: user.email,

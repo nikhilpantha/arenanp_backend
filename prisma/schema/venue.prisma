@@ -38,6 +38,12 @@ model Venue {
   primaryOwner   User   @relation("UserOwnedVenues", fields: [primaryOwnerId], references: [id], onDelete: Cascade)
 
   name        String
+  /// URL-safe handle derived from `name` at creation, unique platform-wide.
+  ///
+  /// IMMUTABLE. Staff login emails embed it (`ram@<slug>.arenanp.com`), so
+  /// regenerating it on a rename would silently break every staff account at
+  /// this venue with no traceable error. `updateProfile` must never touch it.
+  slug        String @unique
   description String?
 
   address   String?
@@ -85,6 +91,7 @@ model Venue {
   closures            VenueClosure[]
   expenses            Expense[]
   cashReconciliations CashReconciliation[]
+  bookingPayments     BookingPayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

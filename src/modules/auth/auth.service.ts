@@ -6,6 +6,12 @@ import * as argon2 from 'argon2';
 import { PrismaService } from '../../database/prisma.service';
 import { CapabilitiesService } from '../capabilities/capabilities.service';
 import { OtpService } from './otp.service';
+import {
+  RefreshTokenService,
+  type IssuedRefreshToken,
+  type SessionMeta,
+} from './refresh-token.service';
+import { assertPasswordStrength } from '../../common/utils/password-policy';
 import { normaliseNepalPhone } from '../../common/utils/phone.util';
 import type { JwtPayload } from '../../common/types/auth-context';
 import type { AppConfig } from '../../config/app.config';
@@ -24,6 +30,7 @@ export class AuthService {
     private readonly otp: OtpService,
     private readonly config: ConfigService,
     private readonly capabilities: CapabilitiesService,
+    private readonly refreshTokens: RefreshTokenService,
   ) {}
 
   /**
@@ -247,15 +254,104 @@ export class AuthService {
   }
 
   /**
-   * Increment the user's `tokenVersion` so every previously-issued JWT is
-   * rejected by JwtStrategy on its next request. Called on sign-out and on
-   * admin actions that should kill existing sessions (suspend, demote, etc).
+   * Open a session for a user who has just proved who they are. The access token
+   * comes from the login path itself; this adds the refresh token that keeps
+   * renewing it for as long as they stay active.
    */
-  async invalidateSessions(userId: string): Promise<void> {
+  openSession(user: User, meta: SessionMeta = {}): Promise<IssuedRefreshToken> {
+    return this.refreshTokens.issue(user.id, meta);
+  }
+
+  /**
+   * Mint the next access token for a rotated refresh token. Re-reads the user so a
+   * suspension or a `tokenVersion` bump lands on the very next refresh rather than
+   * whenever the current access token happens to run out.
+   */
+  async accessTokenForUserId(userId: string): Promise<{ user: User; token: SignedAccessToken }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Your session has ended. Please sign in again.');
+    }
+    return { user, token: await this.signAccessToken(user) };
+  }
+
+  /** Exchange a refresh token for the next one, sliding its deadline forward. */
+  refreshSession(presented: string, meta: SessionMeta = {}) {
+    return this.refreshTokens.rotate(presented, meta);
+  }
+
+  /** Sign out the one device that holds this refresh token. */
+  signOutSession(presented: string): Promise<void> {
+    return this.refreshTokens.revokeByToken(presented);
+  }
+
+  /**
+   * Lock the account out everywhere: bump `tokenVersion` so live access tokens die
+   * on their next request, AND revoke every refresh token, because a surviving one
+   * would simply mint a fresh access token past the bump. For password resets,
+   * suspends and role changes — not for an ordinary sign-out.
+   */
+  /**
+   * Change your own password, proving the current one first.
+   *
+   * Two callers: someone tightening up their own account, and — the reason it
+   * exists — a staff member replacing the starter password their venue owner
+   * chose for them. Verifying the current password matters even in that second
+   * case: it stops a walk-up on an unlocked phone from locking the real holder
+   * out of a seat they were just handed.
+   *
+   * Returns the user so the caller can mint a fresh session. It must: step 4
+   * kills every token in existence for this account, including the one being
+   * used to make this very call, so without a new one the client is bounced to
+   * the login screen the moment it succeeds.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<User> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('Account not found.');
+    if (!user.passwordHash) {
+      throw new BadRequestException(
+        'This account has no password yet. Use "forgot password" to set one.',
+      );
+    }
+
+    const ok = await argon2.verify(user.passwordHash, currentPassword);
+    if (!ok) throw new BadRequestException('That current password is not right.');
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('Pick a password different from the current one.');
+    }
+    assertPasswordStrength(newPassword, {
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      email: user.email,
+    });
+
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await argon2.hash(newPassword, { type: argon2.argon2id }),
+        mustChangePassword: false,
+        // Same reasoning as resetPassword: they have now proved the number is
+        // theirs by holding a working password on it, so phone login unblocks.
+        phoneVerifiedAt: user.phoneVerifiedAt ?? new Date(),
+        // Whoever else knew the old password — the owner who typed it — loses
+        // every session they might have opened with it.
+        tokenVersion: { increment: 1 },
+      },
+    });
+    await this.refreshTokens.revokeAllForUser(user.id, 'password changed');
+    return updated;
+  }
+
+  async invalidateSessions(userId: string, reason = 'sessions invalidated'): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
       data: { tokenVersion: { increment: 1 } },
     });
+    await this.refreshTokens.revokeAllForUser(userId, reason);
   }
 
   private async signAccessToken(user: User): Promise<SignedAccessToken> {

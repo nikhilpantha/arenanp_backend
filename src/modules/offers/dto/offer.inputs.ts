@@ -54,7 +54,15 @@ export class CreateOfferInput {
   code?: string;
 
   @Field() @Type(() => Date) @IsDate() validFrom!: Date;
-  @Field() @Type(() => Date) @IsDate() validUntil!: Date;
+
+  @Field(() => Date, {
+    nullable: true,
+    description: 'Omit for an open-ended offer (runs until switched off).',
+  })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  validUntil?: Date | null;
 
   @Field(() => Int, { nullable: true, description: 'Total redemptions allowed; null = unlimited.' })
   @IsOptional()
@@ -87,7 +95,12 @@ export class UpdateOfferInput {
   audience?: OfferAudience;
   @Field(() => Int, { nullable: true }) @IsOptional() @IsInt() @Min(1) everyGames?: number;
   @Field({ nullable: true }) @IsOptional() @Type(() => Date) @IsDate() validFrom?: Date;
-  @Field({ nullable: true }) @IsOptional() @Type(() => Date) @IsDate() validUntil?: Date;
+  /** Explicit null clears the end date, making the offer open-ended. */
+  @Field(() => Date, { nullable: true })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  validUntil?: Date | null;
   @Field(() => Int, { nullable: true }) @IsOptional() @IsInt() @Min(0) usageLimit?: number;
   @Field({ nullable: true }) @IsOptional() @IsBoolean() isActive?: boolean;
 }

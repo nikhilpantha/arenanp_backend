@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard';
 
+import { CustomerInsightsRepository } from './customer-insights.repository';
+import { CustomerInsightsService } from './customer-insights.service';
 import { CustomersRepository } from './customers.repository';
 import { CustomersResolver } from './customers.resolver';
 import { CustomersService } from './customers.service';
@@ -13,7 +15,14 @@ import { CustomersService } from './customers.service';
  * get-or-create the player's customer (`getOrCreateForUser`).
  */
 @Module({
-  providers: [CustomersResolver, CustomersService, CustomersRepository, VenuePermissionGuard],
+  providers: [
+    CustomersResolver,
+    CustomersService,
+    CustomersRepository,
+    CustomerInsightsService,
+    CustomerInsightsRepository,
+    VenuePermissionGuard,
+  ],
   exports: [CustomersRepository],
 })
 export class CustomersModule {}
