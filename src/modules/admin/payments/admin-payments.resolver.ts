@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 
 import { AdminPaymentsService } from './admin-payments.service';
@@ -15,8 +12,7 @@ import { MarkSettlementPaidInput } from './dto/settlement-actions.inputs';
 import { SettlementExportRow } from './dto/settlement-export-row.model';
 
 @Resolver(() => AdminPayment)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('payments.view')
 export class AdminPaymentsResolver {
   constructor(private readonly service: AdminPaymentsService) {}
 
@@ -51,6 +47,7 @@ export class AdminPaymentsResolver {
     return this.service.overview(input ?? new ListAdminPaymentsInput());
   }
 
+  @RequirePermission('payouts.view')
   @Query(() => [SettlementExportRow], {
     name: 'adminSettlementsExport',
     description:
@@ -63,6 +60,7 @@ export class AdminPaymentsResolver {
     return this.service.exportSettlements(input ?? new ListAdminPaymentsInput());
   }
 
+  @RequirePermission('payouts.settle')
   @Mutation(() => AdminPayment, {
     name: 'adminMarkSettlementPaid',
     description:

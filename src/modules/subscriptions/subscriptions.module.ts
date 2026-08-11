@@ -6,6 +6,7 @@ import { CustomersModule } from '../customers/customers.module';
 import { SubscriptionsRepository } from './subscriptions.repository';
 import { SubscriptionsResolver } from './subscriptions.resolver';
 import { SubscriptionsService } from './subscriptions.service';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Venue memberships: plans (the product) + subscriptions (a customer on a plan)
@@ -13,7 +14,7 @@ import { SubscriptionsService } from './subscriptions.service';
  * memberships:manage.
  */
 @Module({
-  imports: [CustomersModule],
+  imports: [RbacModule, CustomersModule],
   providers: [
     SubscriptionsResolver,
     SubscriptionsService,

@@ -1,0 +1,84 @@
+/// Audit logging schema for tracking all permission and role changes.
+/// This is separate from other schemas to keep audit-specific models organized.
+
+/// Audit log for staff permission changes (grants, revokes, expirations)
+model StaffAuditLog {
+  id        String   @id @default(cuid())
+
+  /// Who performed the action (admin/super_admin user ID)
+  userId    String
+
+  /// Type of action: PERMISSION_GRANTED, PERMISSION_REVOKED, PERMISSION_EXPIRED
+  action    String
+
+  /// ID of the user affected by this action
+  targetId  String?
+
+  /// What was changed - JSON to handle variable fields
+  /// Examples:
+  /// { permission: "finance:read", expiresAt: "2026-08-25" }
+  /// { from: "SUPPORT_AGENT", to: "MODERATOR" }
+  details   Json
+
+  /// Reason for the change (e.g., "Temporary access for new hire", "Routine review")
+  reason    String?
+
+  /// Requester IP address (for security audit)
+  ipAddress String?
+
+  /// When the action occurred
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([targetId, timestamp])
+  @@index([action, timestamp])
+}
+
+/// Audit log for role changes (USER → SUPPORT_AGENT, SUPPORT_AGENT → MODERATOR, etc.)
+model RoleChangeAuditLog {
+  id        String   @id @default(cuid())
+
+  /// User whose role was changed
+  userId    String
+
+  /// Previous role
+  fromRole  String
+
+  /// New role
+  toRole    String
+
+  /// Who made the change (admin/super_admin user ID)
+  changedBy String
+
+  /// Why the role was changed
+  reason    String?
+
+  /// When the change occurred
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([changedBy, timestamp])
+}
+
+/// Audit log for staff suspensions/unsuspensions
+model StaffSuspensionAuditLog {
+  id        String   @id @default(cuid())
+
+  /// Staff member who was suspended/unsuspended
+  userId    String
+
+  /// Action type: SUSPENDED or UNSUSPENDED
+  action    String
+
+  /// Who performed the action (admin/super_admin user ID)
+  actedBy   String
+
+  /// Reason for suspension/unsuspension
+  reason    String?
+
+  /// When the action occurred
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([actedBy, timestamp])
+}

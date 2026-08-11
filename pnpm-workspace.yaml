@@ -1,0 +1,10 @@
+allowBuilds:
+  # Prisma's postinstall generates the typed client from prisma/schema/*.
+  # Blocking these leaves a stale node_modules/.prisma and breaks typecheck.
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  # Native module — needs its build step to produce the binding.
+  argon2: true
+  # Only used for Apollo usage reporting; the JS fallback is fine.
+  '@apollo/protobufjs': false

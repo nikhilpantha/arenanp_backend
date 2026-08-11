@@ -45,7 +45,7 @@ export class VenueStaffResolver {
     name: 'venueStaff',
     description: 'Everyone with a seat at this venue, owners first.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   venueStaff(
     @Args('venueId', { type: () => ID }) venueId: string,
     @CurrentUser() actor: AuthUser,
@@ -58,7 +58,7 @@ export class VenueStaffResolver {
     description:
       'The email domain this venue\'s staff logins live under, e.g. "lumbini-futsal.arenanp.com".',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   venueStaffLoginDomain(@Args('venueId', { type: () => ID }) venueId: string): Promise<string> {
     return this.service.loginDomain(venueId);
   }
@@ -68,7 +68,7 @@ export class VenueStaffResolver {
     description:
       'What the add-staff form would do as typed: the address that would be minted, and whether this mobile already belongs to someone.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   venueStaffLoginPreview(@Args('input') input: PreviewStaffLoginInput): Promise<StaffLoginPreview> {
     return this.service.preview(input);
   }
@@ -78,7 +78,7 @@ export class VenueStaffResolver {
     description:
       'What one staff member did over a period — bookings created, cancellations, money taken, cash days closed. Read from columns already written on every action.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   venueStaffActivity(@Args('input') input: VenueStaffActivityInput): Promise<StaffActivity> {
     return this.activity.forMember(input);
   }
@@ -88,7 +88,7 @@ export class VenueStaffResolver {
     description:
       'Add someone to the staff: mints a login for a new number, or (once confirmed) gives an existing Arena NP account a seat.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   createVenueStaff(
     @Args('input') input: CreateVenueStaffInput,
     @CurrentUser() actor: AuthUser,
@@ -100,7 +100,7 @@ export class VenueStaffResolver {
     name: 'updateVenueStaff',
     description: "Change a staff member's role.",
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   updateVenueStaff(
     @Args('input') input: UpdateVenueStaffInput,
     @CurrentUser() actor: AuthUser,
@@ -112,7 +112,7 @@ export class VenueStaffResolver {
     name: 'setVenueStaffStatus',
     description: 'Suspend a seat, or switch it back on. Takes effect on their very next request.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   setVenueStaffStatus(
     @Args('input') input: SetVenueStaffStatusInput,
     @CurrentUser() actor: AuthUser,
@@ -125,7 +125,7 @@ export class VenueStaffResolver {
     description:
       'Take away the seat. Everything they booked, took payment for or closed keeps their name.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   removeVenueStaff(
     @Args('input') input: RemoveVenueStaffInput,
     @CurrentUser() actor: AuthUser,
@@ -138,7 +138,7 @@ export class VenueStaffResolver {
     description:
       'Issue a new starter password for a login this venue minted. Shown once. Not available for someone using their own Arena NP account.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   resetVenueStaffPassword(
     @Args('input') input: ResetVenueStaffPasswordInput,
     @CurrentUser() actor: AuthUser,

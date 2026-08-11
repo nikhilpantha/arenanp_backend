@@ -92,6 +92,7 @@ model Venue {
   expenses            Expense[]
   cashReconciliations CashReconciliation[]
   bookingPayments     BookingPayment[]
+  staff               VenueStaff[] // Platform-assigned venue staff
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

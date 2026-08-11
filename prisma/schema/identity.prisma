@@ -2,6 +2,9 @@
 
 enum UserRole {
   USER
+  SUPPORT_AGENT
+  MODERATOR
+  ADMIN
   SUPER_ADMIN
 }
 
@@ -27,9 +30,10 @@ enum CapabilityStatus {
   SUSPENDED
 }
 
-/// A user's role *within a single venue* (venue-scoped RBAC). OWNER is the venue
-/// asset's owner; the rest are staff tiers. Default permissions per role are
-/// resolved in code (ROLE_PERMISSIONS), with per-membership overrides allowed.
+/// A staff member's job title within a single venue — a display label only.
+/// It grants nothing: venue permissions are granted per user per venue in
+/// `staff_permissions`. OWNER is the exception, and only because the venue's
+/// `primaryOwnerId` carries an implicit wildcard in VenuePermissionGuard.
 enum VenueMemberRole {
   OWNER
   MANAGER
@@ -76,11 +80,28 @@ model User {
   /// revokes that device's refresh token instead (see RefreshToken).
   tokenVersion    Int       @default(1)
   lastLoginAt     DateTime?
+  isStaff         Boolean   @default(false)
+  suspendedAt     DateTime?
+
+  /// Staff account setup: token sent via email, expires in 24h
+  setupToken        String?   @unique @map("setuptoken")
+  setupTokenExpiry  DateTime? @map("setuptokenexpiry")
+  setupTokenUsedAt  DateTime? @map("setuptokenusedat")
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Staff assignments (isolated from regular user)
+  systemStaff      SystemStaff?
+  venueStaff       VenueStaff[]  @relation("VenueStaff")
+  organizerStaff   OrganizerStaff[] @relation("OrganizerStaff")
+
   // Layer 2 — capabilities (status gates)
   capabilities UserCapability[]
+
+  // Layer 1 — permissions granted to this staff member, per scope.
+  // There are no roles; see prisma/schema/rbac.prisma.
+  staffPermissions StaffPermission[] @relation("StaffPermissions")
 
   /// One row per signed-in device, kept alive by activity (see RefreshToken).
   refreshTokens RefreshToken[]
@@ -373,3 +394,4 @@ model VenueVerificationRequest {
   @@index([userId])
   @@map("venue_verification_requests")
 }
+

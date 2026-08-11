@@ -20,7 +20,10 @@ import {
   PayBasis,
   PaymentProvider,
   PaymentStatus,
+  PermissionDomain,
+  PermissionScopeType,
   RefundStatus,
+  StaffStatus,
   SettlementStatus,
   SportBookingMode,
   SportPeriodType,
@@ -38,7 +41,8 @@ import {
 
 registerEnumType(UserRole, {
   name: 'UserRole',
-  description: 'Base user role. USER for everyone, SUPER_ADMIN for platform admins.',
+  description:
+    'User role (platform-wide). USER for regular users/venue staff, or platform staff: SUPPORT_AGENT, MODERATOR, ADMIN, SUPER_ADMIN.',
 });
 
 registerEnumType(CapabilityType, {
@@ -219,6 +223,24 @@ registerEnumType(SubscriptionStatus, {
     "A subscription's lifecycle: ACTIVE -> (PAUSED) -> EXPIRED, with CANCELLED as a terminal sink.",
 });
 
+registerEnumType(PermissionDomain, {
+  name: 'PermissionDomain',
+  description:
+    'Business area a permission belongs to: PLATFORM_ADMINISTRATION, VENUE_MANAGEMENT or TOURNAMENT_MANAGEMENT.',
+});
+
+registerEnumType(StaffStatus, {
+  name: 'StaffStatus',
+  description:
+    'Whether a staff assignment is ACTIVE, temporarily SUSPENDED, or INACTIVE (no longer with the organisation).',
+});
+
+registerEnumType(PermissionScopeType, {
+  name: 'PermissionScopeType',
+  description:
+    'What a permission grant applies to: PLATFORM (whole platform), VENUE (one venue) or TOURNAMENT (one tournament).',
+});
+
 registerEnumType(ExpenseCategory, {
   name: 'ExpenseCategory',
   description:
@@ -245,7 +267,10 @@ export {
   OfferTrigger,
   PaymentProvider,
   PaymentStatus,
+  PermissionDomain,
+  PermissionScopeType,
   RefundStatus,
+  StaffStatus,
   SettlementStatus,
   SportBookingMode,
   SportPeriodType,

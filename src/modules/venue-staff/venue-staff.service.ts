@@ -6,10 +6,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MembershipStatus, UserRole, VenueMemberRole } from '@prisma/client';
+import { MembershipStatus, PermissionScopeType, UserRole, VenueMemberRole } from '@prisma/client';
 import * as argon2 from 'argon2';
 
-import { effectivePermissions } from '../../common/constants/permissions';
+import { presetFor } from '../../common/constants/venue-role-presets';
+import { StaffPermissionService } from '../rbac/staff-permission.service';
+import { PermissionResolverService } from '../rbac/permission-resolver.service';
 import { assertPasswordStrength } from '../../common/utils/password-policy';
 import { normaliseNepalPhone } from '../../common/utils/phone.util';
 
@@ -55,7 +57,36 @@ export class VenueStaffService {
   constructor(
     private readonly repo: VenueStaffRepository,
     private readonly auth: AuthService,
+    private readonly staffPermissions: StaffPermissionService,
+    private readonly permissions: PermissionResolverService,
   ) {}
+
+  /**
+   * Give a seat the starting permissions its job title implies.
+   *
+   * Called when a seat is created, reactivated, or has its title changed. The
+   * preset is a starting point, not a rule — it replaces the seat's grants for
+   * this venue, so changing someone's title resets them to that title's set and
+   * any hand-tuning is redone deliberately rather than silently surviving.
+   */
+  private async applyPreset(
+    userId: string,
+    venueId: string,
+    role: VenueMemberRole,
+    actorId: string,
+  ): Promise<void> {
+    await this.staffPermissions.setPermissions(
+      userId,
+      { scopeType: PermissionScopeType.VENUE, scopeId: venueId },
+      [...presetFor(role)],
+      actorId,
+    );
+  }
+
+  /** Effective venue permissions for one seat. */
+  private permissionsFor(userId: string, venueId: string): Promise<string[]> {
+    return this.permissions.getVenueUserPermissions(userId, venueId);
+  }
 
   async list(
     venueId: string,
@@ -65,7 +96,12 @@ export class VenueStaffService {
     const venue = primaryOwnerId ? null : await this.repo.venueForStaff(venueId);
     const ownerId = primaryOwnerId ?? venue?.primaryOwnerId;
     const seats = await this.repo.listSeats(venueId);
-    return seats.map((seat) => mapSeat(seat, actorId, ownerId));
+
+    return Promise.all(
+      seats.map(async (seat) =>
+        mapSeat(seat, actorId, await this.permissionsFor(seat.userId, venueId), ownerId),
+      ),
+    );
   }
 
   /**
@@ -133,9 +169,16 @@ export class VenueStaffService {
       invitedById: actorId,
     });
 
+    await this.applyPreset(seat.userId, input.venueId, input.role, actorId);
+
     this.logger.log(`staff created: ${seat.id} (${input.role}) at ${input.venueId} by ${actorId}`);
     return {
-      member: mapSeat(seat, actorId, venue.primaryOwnerId),
+      member: mapSeat(
+        seat,
+        actorId,
+        await this.permissionsFor(seat.userId, input.venueId),
+        venue.primaryOwnerId,
+      ),
       outcome: StaffCreateOutcome.CREATED_ACCOUNT,
       credentials: { loginEmail: email, password },
     };
@@ -186,9 +229,16 @@ export class VenueStaffService {
           status: MembershipStatus.ACTIVE,
           role: input.role,
         });
+        await this.applyPreset(reactivated.userId, input.venueId, input.role, actorId);
+
         this.logger.log(`staff reactivated: ${seat.id} at ${input.venueId} by ${actorId}`);
         return {
-          member: mapSeat(reactivated, actorId, primaryOwnerId),
+          member: mapSeat(
+            reactivated,
+            actorId,
+            await this.permissionsFor(reactivated.userId, input.venueId),
+            primaryOwnerId,
+          ),
           outcome: StaffCreateOutcome.REACTIVATED,
         };
       }
@@ -207,11 +257,18 @@ export class VenueStaffService {
       role: input.role,
       invitedById: actorId,
     });
+    await this.applyPreset(created.userId, input.venueId, input.role, actorId);
+
     this.logger.log(
       `staff attached: ${created.id} (${input.role}) at ${input.venueId} by ${actorId}`,
     );
     return {
-      member: mapSeat(created, actorId, primaryOwnerId),
+      member: mapSeat(
+        created,
+        actorId,
+        await this.permissionsFor(created.userId, input.venueId),
+        primaryOwnerId,
+      ),
       outcome: StaffCreateOutcome.ATTACHED_EXISTING,
     };
   }
@@ -225,13 +282,24 @@ export class VenueStaffService {
       await this.assertNotSelf(seat, actorId, "You can't change your own role.");
       await this.assertNotLastOwner(seat, venue.primaryOwnerId, 'demoted');
       const updated = await this.repo.updateSeat(seat.id, { role: input.role });
+      await this.applyPreset(updated.userId, input.venueId, input.role, actorId);
       this.logger.log(
         `staff role: ${seat.id} ${seat.role} → ${input.role} at ${input.venueId} by ${actorId}`,
       );
-      return mapSeat(updated, actorId, venue.primaryOwnerId);
+      return mapSeat(
+        updated,
+        actorId,
+        await this.permissionsFor(updated.userId, input.venueId),
+        venue.primaryOwnerId,
+      );
     }
 
-    return mapSeat(seat, actorId, venue.primaryOwnerId);
+    return mapSeat(
+      seat,
+      actorId,
+      await this.permissionsFor(seat.userId, input.venueId),
+      venue.primaryOwnerId,
+    );
   }
 
   async setStatus(input: SetVenueStaffStatusInput, actorId: string): Promise<VenueStaffMember> {
@@ -252,7 +320,12 @@ export class VenueStaffService {
     // at, which is not this venue's decision to make.
     const updated = await this.repo.updateSeat(seat.id, { status: input.status });
     this.logger.log(`staff status: ${seat.id} → ${input.status} at ${input.venueId} by ${actorId}`);
-    return mapSeat(updated, actorId, venue.primaryOwnerId);
+    return mapSeat(
+      updated,
+      actorId,
+      await this.permissionsFor(updated.userId, input.venueId),
+      venue.primaryOwnerId,
+    );
   }
 
   /**
@@ -382,7 +455,12 @@ export class VenueStaffService {
   }
 }
 
-function mapSeat(seat: StaffSeat, actorId: string, primaryOwnerId?: string): VenueStaffMember {
+function mapSeat(
+  seat: StaffSeat,
+  actorId: string,
+  permissions: string[],
+  primaryOwnerId?: string,
+): VenueStaffMember {
   return {
     membershipId: seat.id,
     userId: seat.userId,
@@ -390,7 +468,7 @@ function mapSeat(seat: StaffSeat, actorId: string, primaryOwnerId?: string): Ven
     phoneNumber: seat.user.phoneNumber,
     role: seat.role,
     status: seat.status,
-    permissions: effectivePermissions(seat.role, seat.permissions),
+    permissions,
     // A personal account's address is that person's, not the venue's.
     loginEmail: seat.provisionedUser ? (seat.user.email ?? undefined) : undefined,
     provisionedUser: seat.provisionedUser,

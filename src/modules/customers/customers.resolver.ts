@@ -25,7 +25,7 @@ export class CustomersResolver {
     description: "Search/list a venue's customers (people and teams) with loyalty.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('customers:read')
+  @RequireVenuePermission('venue.customers.view')
   venueCustomers(@Args('input') input: ListVenueCustomersInput): Promise<VenueCustomerModel[]> {
     return this.service.listVenueCustomers(input);
   }
@@ -35,7 +35,7 @@ export class CustomersResolver {
     description: 'A single venue customer.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('customers:read')
+  @RequireVenuePermission('venue.customers.view')
   venueCustomer(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('customerId', { type: () => ID }) customerId: string,
@@ -49,7 +49,7 @@ export class CustomersResolver {
       "A page of a customer's bookings (most recent first) — the detail screen lists every game individually.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('customers:read')
+  @RequireVenuePermission('venue.customers.view')
   venueCustomerBookings(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('customerId', { type: () => ID }) customerId: string,
@@ -70,7 +70,7 @@ export class CustomersResolver {
       "A customer's play history at this venue, aggregated: loyalty standing, spend, reliability and playing preferences.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('customers:read')
+  @RequireVenuePermission('venue.customers.view')
   venueCustomerInsights(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('customerId', { type: () => ID }) customerId: string,
@@ -83,7 +83,7 @@ export class CustomersResolver {
     description: "A customer's memberships (most recent first), for the unified profile.",
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('customers:read')
+  @RequireVenuePermission('venue.customers.view')
   venueCustomerSubscriptions(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('customerId', { type: () => ID }) customerId: string,
@@ -96,7 +96,7 @@ export class CustomersResolver {
     description: 'Create (or reuse, by phone) a venue customer.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('customers:read')
+  @RequireVenuePermission('venue.bookings.manage')
   createVenueCustomer(@Args('input') input: CreateVenueCustomerInput): Promise<VenueCustomerModel> {
     return this.service.create(input);
   }

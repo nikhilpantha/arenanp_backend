@@ -20,9 +20,7 @@ function activeWindow(now: Date): Prisma.OfferWhereInput {
 
 /** A loyalty subject — exactly one identity is set (customer, user, or phone). */
 export type LoyaltySubject =
-  | { customerId: string }
-  | { venueId: string; userId: string }
-  | { venueId: string; phone: string };
+  { customerId: string } | { venueId: string; userId: string } | { venueId: string; phone: string };
 
 function subjectWhere(subject: LoyaltySubject): Prisma.BookingWhereInput {
   if ('customerId' in subject) return { customerId: subject.customerId };

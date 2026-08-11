@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Sport } from '@prisma/client';
 
+import { permissionKeysForDomain } from '../../common/constants/permission-keys';
 import { StorageService } from '../../storage/storage.service';
 import { courtRow, VenueRepository } from './venue.repository';
 import { mapMembershipToGraphql, VenueMembershipModel } from './dto/venue-membership.model';
@@ -76,9 +77,24 @@ export class VenueService {
     return redactVenue(mapVenueToGraphql(venue), await this.repo.myPermissions(venueId, userId));
   }
 
+  /**
+   * The caller's venue seats, each with the permissions they actually hold
+   * there. The owner's set is everything, matching `VenuePermissionGuard` — the
+   * app must not render a narrower panel set than the API will accept.
+   */
   async myMemberships(userId: string): Promise<VenueMembershipModel[]> {
     const rows = await this.repo.findMyMemberships(userId);
-    return rows.map(mapMembershipToGraphql);
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const permissions =
+          row.venue.primaryOwnerId === userId
+            ? [...permissionKeysForDomain('VENUE_MANAGEMENT')]
+            : ((await this.repo.myPermissions(row.venueId, userId)) ?? []);
+
+        return mapMembershipToGraphql(row, permissions);
+      }),
+    );
   }
 
   async submitVenue(userId: string, input: SubmitVenueInput): Promise<VenueModel> {

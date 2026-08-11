@@ -72,4 +72,33 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const res = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
     return res === 'OK';
   }
+
+  // ─── pattern helpers ──────────────────────────────────────────────────
+
+  /**
+   * Delete all keys matching a pattern (e.g., 'user:*').
+   * Uses SCAN to avoid blocking on large key sets.
+   */
+  async deleteByPattern(pattern: string): Promise<number> {
+    let cursor = '0';
+    let deleted = 0;
+
+    do {
+      const [nextCursor, keys] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+
+      if (keys.length > 0) {
+        deleted += await this.client.del(...keys);
+      }
+    } while (cursor !== '0');
+
+    return deleted;
+  }
+
+  /**
+   * Get number of keys in the current Redis database.
+   */
+  async dbSize(): Promise<number> {
+    return this.client.dbsize();
+  }
 }

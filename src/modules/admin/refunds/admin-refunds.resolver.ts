@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 
 import { AdminRefundsService } from './admin-refunds.service';
@@ -18,8 +15,7 @@ import {
 } from './dto/refund-action.inputs';
 
 @Resolver(() => AdminRefundRequest)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('refunds.view')
 export class AdminRefundsResolver {
   constructor(private readonly service: AdminRefundsService) {}
 
@@ -42,6 +38,7 @@ export class AdminRefundsResolver {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('refunds.approve')
   @Mutation(() => AdminRefundRequest, { name: 'adminApproveRefund' })
   approve(
     @Args('input') input: ApproveRefundInput,
@@ -50,6 +47,7 @@ export class AdminRefundsResolver {
     return this.service.approve(input, actor);
   }
 
+  @RequirePermission('refunds.reject')
   @Mutation(() => AdminRefundRequest, { name: 'adminRejectRefund' })
   reject(
     @Args('input') input: RejectRefundInput,
@@ -58,6 +56,7 @@ export class AdminRefundsResolver {
     return this.service.reject(input, actor);
   }
 
+  @RequirePermission('payments.refund')
   @Mutation(() => AdminRefundRequest, {
     name: 'adminMarkRefundProcessed',
     description:

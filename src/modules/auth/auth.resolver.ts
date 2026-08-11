@@ -7,6 +7,7 @@ import { VerifyOtpInput } from './dto/verify-otp.input';
 import { LoginWithEmailInput } from './dto/login-with-email.input';
 import { LoginWithPhoneInput } from './dto/login-with-phone.input';
 import { RefreshSessionInput } from './dto/refresh-session.input';
+import { SetupPasswordInput } from './dto/setup-password.input';
 import { ChangePasswordInput } from './dto/change-password.input';
 import { RequestPasswordResetInput } from './dto/request-password-reset.input';
 import { ResetPasswordInput } from './dto/reset-password.input';
@@ -99,6 +100,18 @@ export class AuthResolver {
       input.phoneNumber,
       input.password,
     );
+    return this.sessions.open(user, token, ctx);
+  }
+
+  @Public()
+  @Mutation(() => AuthPayload, {
+    description: 'Set the password for a new staff member using their emailed setup token.',
+  })
+  async setupPassword(
+    @Args('input') input: SetupPasswordInput,
+    @Context() ctx: GqlContext,
+  ): Promise<AuthPayload> {
+    const { user, token } = await this.authService.setupStaffPassword(input.token, input.password);
     return this.sessions.open(user, token, ctx);
   }
 

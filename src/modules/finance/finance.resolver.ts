@@ -53,7 +53,7 @@ export class FinanceResolver {
     name: 'venueFinanceSummary',
     description: 'Income, give-aways, expenses and net profit for a venue over a period.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueFinanceSummary(@Args('input') input: FinanceRangeInput): Promise<FinanceSummary> {
     return this.service.summary(input);
   }
@@ -63,7 +63,7 @@ export class FinanceResolver {
     description:
       'Income, expenses, profit and booking volume as a gap-filled series. Bucket width follows `granularity`, or the range length when omitted.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueFinanceTrend(@Args('input') input: FinanceTrendInput): Promise<FinanceTrendPoint[]> {
     return this.service.trend(input);
   }
@@ -73,7 +73,7 @@ export class FinanceResolver {
     description:
       'Every money movement — booking payments, membership payments and expenses — searchable, filterable, sortable and paged. Totals cover the whole filtered set, not the page.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueTransactions(@Args('input') input: ListTransactionsInput): Promise<PaginatedTransactions> {
     return this.service.transactions(input);
   }
@@ -82,7 +82,7 @@ export class FinanceResolver {
     name: 'venueReceivables',
     description: 'Bookings with money still owed, largest first — the list behind `outstanding`.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueReceivables(@Args('input') input: FinanceRangeInput): Promise<ReceivableRow[]> {
     return this.service.receivables(input);
   }
@@ -91,7 +91,7 @@ export class FinanceResolver {
     name: 'venueFinancePerformance',
     description: 'Occupancy, revenue by court / sport, peak hours and top customers.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueFinancePerformance(@Args('input') input: FinanceRangeInput): Promise<FinancePerformance> {
     return this.service.performance(input);
   }
@@ -100,7 +100,7 @@ export class FinanceResolver {
     name: 'venueOfferPerformance',
     description: 'Per-offer cost vs. revenue driven, plus loyalty free-game give-away.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueOfferPerformance(@Args('input') input: FinanceRangeInput): Promise<OfferPerformance> {
     return this.service.offerPerformance(input);
   }
@@ -109,7 +109,7 @@ export class FinanceResolver {
     name: 'venuePayoutSummary',
     description: 'Platform-held settlement balance owed to the venue.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venuePayoutSummary(@Args('venueId', { type: () => ID }) venueId: string): Promise<PayoutSummary> {
     return this.service.payoutSummary(venueId);
   }
@@ -118,7 +118,7 @@ export class FinanceResolver {
     name: 'venueExpenses',
     description: 'Expenses for a venue over a period.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueExpenses(@Args('input') input: ListExpensesInput): Promise<ExpenseModel[]> {
     return this.service.listExpenses(input);
   }
@@ -127,7 +127,7 @@ export class FinanceResolver {
     name: 'venueCashDayPreview',
     description: 'Expected cash to count for a business day, with the cash-in/out breakdown.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueCashDayPreview(@Args('input') input: CashDayInput): Promise<CashDayPreview> {
     return this.service.cashDayPreview(input);
   }
@@ -136,7 +136,7 @@ export class FinanceResolver {
     name: 'venueCashReconciliations',
     description: 'Closed cash days for a venue over a period.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueCashReconciliations(
     @Args('input') input: FinanceRangeInput,
   ): Promise<CashReconciliationModel[]> {
@@ -149,7 +149,7 @@ export class FinanceResolver {
     name: 'createVenueExpense',
     description: 'Record an operating expense.',
   })
-  @RequireVenuePermission('finance:write')
+  @RequireVenuePermission('venue.finance.manage')
   createVenueExpense(
     @Args('input') input: CreateExpenseInput,
     @CurrentUser() user: AuthUser,
@@ -161,7 +161,7 @@ export class FinanceResolver {
     name: 'updateVenueExpense',
     description: 'Edit an operating expense.',
   })
-  @RequireVenuePermission('finance:write')
+  @RequireVenuePermission('venue.finance.manage')
   updateVenueExpense(@Args('input') input: UpdateExpenseInput): Promise<ExpenseModel> {
     return this.service.updateExpense(input);
   }
@@ -170,7 +170,7 @@ export class FinanceResolver {
     name: 'deleteVenueExpense',
     description: 'Delete an operating expense.',
   })
-  @RequireVenuePermission('finance:write')
+  @RequireVenuePermission('venue.finance.manage')
   deleteVenueExpense(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('expenseId', { type: () => ID }) expenseId: string,
@@ -185,7 +185,7 @@ export class FinanceResolver {
     description:
       'Who is owed what for a pay period, and what has been paid. Daily and per-session staff report a null `due` until a count is entered — the system does not record attendance and will not pretend to.',
   })
-  @RequireVenuePermission('finance:read')
+  @RequireVenuePermission('venue.finance.view')
   venueSalaries(@Args('input') input: VenueSalariesInput): Promise<VenueSalaryPeriod> {
     return this.salaries.period(input);
   }
@@ -195,7 +195,7 @@ export class FinanceResolver {
     description:
       'Record a salary payment. Writes an expense, so it lands in net profit, the ledger, the category breakdown and the cash-day close with no further work.',
   })
-  @RequireVenuePermission('finance:write')
+  @RequireVenuePermission('venue.finance.manage')
   async recordStaffSalaryPayment(
     @Args('input') input: RecordStaffSalaryPaymentInput,
     @CurrentUser() user: AuthUser,
@@ -207,7 +207,7 @@ export class FinanceResolver {
     name: 'setStaffPayTerms',
     description: 'Set or clear what a staff member is paid, and on what basis.',
   })
-  @RequireVenuePermission('staff:manage')
+  @RequireVenuePermission('venue.staff.manage')
   async setStaffPayTerms(@Args('input') input: SetStaffPayTermsInput): Promise<boolean> {
     await this.salaries.setPayTerms(
       input.venueId,
@@ -222,7 +222,7 @@ export class FinanceResolver {
     name: 'closeVenueCashDay',
     description: 'Close a business day: snapshot expected cash and record the physical count.',
   })
-  @RequireVenuePermission('finance:write')
+  @RequireVenuePermission('venue.finance.manage')
   closeVenueCashDay(
     @Args('input') input: CloseCashDayInput,
     @CurrentUser() user: AuthUser,

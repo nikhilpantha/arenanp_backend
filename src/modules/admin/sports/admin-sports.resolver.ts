@@ -1,10 +1,7 @@
-import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
-import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import type { AuthUser } from '../../../common/types/auth-context';
 import { StorageService } from '../../../storage/storage.service';
 
@@ -13,8 +10,7 @@ import { AdminSport } from './dto/admin-sport.model';
 import { CreateSportInput, UpdateSportInput } from './dto/sport.inputs';
 
 @Resolver(() => AdminSport)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('sports.view')
 export class AdminSportsResolver {
   constructor(
     private readonly service: AdminSportsService,
@@ -43,6 +39,7 @@ export class AdminSportsResolver {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('sports.create')
   @Mutation(() => AdminSport, { name: 'adminCreateSport' })
   create(
     @Args('input') input: CreateSportInput,
@@ -51,11 +48,13 @@ export class AdminSportsResolver {
     return this.service.create(input, actor);
   }
 
+  @RequirePermission('sports.edit')
   @Mutation(() => AdminSport, { name: 'adminUpdateSport' })
   update(@Args('input') input: UpdateSportInput): Promise<AdminSport> {
     return this.service.update(input);
   }
 
+  @RequirePermission('sports.delete')
   @Mutation(() => Boolean, {
     name: 'adminDeleteSport',
     description:

@@ -5,6 +5,7 @@ import { VenuePermissionGuard } from '../../common/guards/venue-permission.guard
 import { OffersRepository } from './offers.repository';
 import { OffersResolver } from './offers.resolver';
 import { OffersService } from './offers.service';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Venue offers (discounts / promo codes). Venue staff manage offers (offers:manage);
@@ -12,6 +13,7 @@ import { OffersService } from './offers.service';
  * the booking flow can validate + price a promo code at `createBooking`.
  */
 @Module({
+  imports: [RbacModule],
   providers: [OffersResolver, OffersService, OffersRepository, VenuePermissionGuard],
   exports: [OffersService],
 })

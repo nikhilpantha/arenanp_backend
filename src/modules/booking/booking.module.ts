@@ -8,6 +8,7 @@ import { BookingRepository } from './booking.repository';
 import { BookingResolver } from './booking.resolver';
 import { BookingService } from './booking.service';
 import { PlayerBookingResolver } from './player-booking.resolver';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Bookings core. The venue panel manages bookings (list, summary, detail, walk-in
@@ -16,7 +17,7 @@ import { PlayerBookingResolver } from './player-booking.resolver';
  * gated by the PLAYER capability).
  */
 @Module({
-  imports: [OffersModule, CustomersModule],
+  imports: [RbacModule, OffersModule, CustomersModule],
   providers: [
     BookingResolver,
     PlayerBookingResolver,

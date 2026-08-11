@@ -7,7 +7,7 @@ import {
   VenueVerificationStatus,
 } from '@prisma/client';
 
-import { effectivePermissions } from '../../common/constants/permissions';
+import { PermissionScopeType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 import type {
@@ -34,7 +34,8 @@ const VENUE_INCLUDES = {
 } satisfies Prisma.VenueInclude;
 
 const MEMBERSHIP_INCLUDES = {
-  venue: { select: { name: true, verificationStatus: true } },
+  // primaryOwnerId powers the owner's implicit wildcard, matching the guard.
+  venue: { select: { name: true, verificationStatus: true, primaryOwnerId: true } },
 } satisfies Prisma.VenueMembershipInclude;
 
 /**
@@ -135,14 +136,28 @@ export class VenueRepository {
     });
   }
 
-  /** The caller's effective permissions at one venue, or null if not an active member. */
+  /**
+   * The caller's effective permissions at one venue, or null if they hold no
+   * active seat there. Read from their grants — the seat's `role` is a job
+   * title, not an authority.
+   */
   async myPermissions(venueId: string, userId: string): Promise<string[] | null> {
     const membership = await this.prisma.venueMembership.findUnique({
       where: { venueId_userId: { venueId, userId } },
-      select: { role: true, permissions: true, status: true },
+      select: { status: true },
     });
     if (!membership || membership.status !== MembershipStatus.ACTIVE) return null;
-    return effectivePermissions(membership.role, membership.permissions);
+
+    const grants = await this.prisma.staffPermission.findMany({
+      where: {
+        userId,
+        scopeType: PermissionScopeType.VENUE,
+        scopeId: venueId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { permissionKey: true },
+    });
+    return grants.map((g) => g.permissionKey);
   }
 
   findById(venueId: string): Promise<VenueWithRelations | null> {

@@ -18,6 +18,8 @@ import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { EmailModule } from './modules/email/email.module';
+import { RbacModule } from './modules/rbac/rbac.module';
 import { BookingModule } from './modules/booking/booking.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { OffersModule } from './modules/offers/offers.module';
@@ -29,6 +31,8 @@ import { VenueStaffModule } from './modules/venue-staff/venue-staff.module';
 import { VenueInvitationsModule } from './modules/venue-invitations/venue-invitations.module';
 import { SportsModule } from './modules/sports/sports.module';
 import { ClosuresModule } from './modules/closures/closures.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { HealthController } from './health.controller';
 
@@ -62,11 +66,13 @@ import { HealthController } from './health.controller';
     RedisModule,
     MailerModule,
     StorageModule,
+    EmailModule,
 
     CapabilitiesModule,
     AuthModule,
     UsersModule,
     AdminModule,
+    RbacModule,
     VenueModule,
     VenueStaffModule,
     BookingModule,
@@ -77,6 +83,8 @@ import { HealthController } from './health.controller';
     VenueInvitationsModule,
     SportsModule,
     ClosuresModule,
+    MarketingModule,
+    AuditModule,
     FinanceModule,
   ],
   controllers: [HealthController],

@@ -1,6 +1,6 @@
 import { SetMetadata } from '@nestjs/common';
 
-import type { VenuePermission } from '../constants/permissions';
+import type { VenuePermissionKey } from '../constants/permission-keys';
 
 export const REQUIRE_VENUE_PERMISSION_KEY = 'requireVenuePermission';
 
@@ -9,5 +9,5 @@ export const REQUIRE_VENUE_PERMISSION_KEY = 'requireVenuePermission';
  * mutation's `venueId` argument (resolved by `VenuePermissionGuard`).
  * SUPER_ADMIN bypasses; OWNER has every permission.
  */
-export const RequireVenuePermission = (permission: VenuePermission) =>
+export const RequireVenuePermission = (permission: VenuePermissionKey) =>
   SetMetadata(REQUIRE_VENUE_PERMISSION_KEY, permission);

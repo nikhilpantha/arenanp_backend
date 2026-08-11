@@ -41,3 +41,12 @@ firebase-service-account.json
 .tmp/
 tmp/
 *.tsbuildinfo
+
+# Compiled output belongs in dist/. A stray .js beside its .ts silently wins
+# module resolution — ts-node loads it instead of the source, so edits appear to
+# do nothing. 273 of these were once committed here.
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+prisma/**/*.js
+prisma/**/*.d.ts

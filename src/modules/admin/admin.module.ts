@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { EmailModule } from '../email/email.module';
+import { RbacModule } from '../rbac/rbac.module';
 
 import { AdminDashboardRepository } from './dashboard/dashboard.repository';
 import { AdminDashboardResolver } from './dashboard/dashboard.resolver';
@@ -38,15 +40,24 @@ import { AdminSportsResolver } from './sports/admin-sports.resolver';
 import { AdminSportsService } from './sports/admin-sports.service';
 import { SportStubResolver } from './sports/sport-stub.resolver';
 import { AdminStorageResolver } from './storage/admin-storage.resolver';
+import { StaffService } from './staff/staff.service';
+import { StaffResolver } from './staff/staff.resolver';
 
 /**
- * Super-admin module.
+ * Platform administration module.
  *
  * Each admin feature lives in its own sub-folder (dashboard, users, organizers, …).
- * All resolvers in here must be guarded by `@Roles(UserRole.SUPER_ADMIN)` so the
- * surface area can only be reached by an authenticated platform admin.
+ * Every resolver in here must carry `@RequirePermission('<subject>.<action>')`
+ * with keys from `common/constants/permission-keys.ts` — class-level for the
+ * read permission, method-level on each mutation for the write permission.
+ *
+ * There are no roles. Authorization resolves from the grants recorded against
+ * each admin in `staff_permissions`, so any subset of this surface can be handed
+ * to one person without a code change. Do not reintroduce `@Roles(UserRole.X)`:
+ * the enum only marks who is staff, never what they may do.
  */
 @Module({
+  imports: [EmailModule, RbacModule],
   providers: [
     AdminDashboardResolver,
     AdminDashboardService,
@@ -88,6 +99,8 @@ import { AdminStorageResolver } from './storage/admin-storage.resolver';
     AdminSportsRepository,
     SportStubResolver,
     AdminStorageResolver,
+    StaffResolver,
+    StaffService,
   ],
 })
 export class AdminModule {}

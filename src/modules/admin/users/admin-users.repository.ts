@@ -46,6 +46,17 @@ export class AdminUsersRepository {
         capabilities: { some: { type: CapabilityType.VENUE, status: input.venueStatus } },
       });
     }
+    // Staff are managed under /staff, not in the customer directory. Keyed off
+    // the staff tables rather than the `isStaff` flag so the two can never
+    // disagree about who is an admin.
+    if (!input.includeStaff) {
+      and.push({
+        systemStaff: { is: null },
+        venueStaff: { none: {} },
+        organizerStaff: { none: {} },
+      });
+    }
+
     if (and.length) where.AND = and;
     if (typeof input.isActive === 'boolean') where.isActive = input.isActive;
 
@@ -75,14 +86,46 @@ export class AdminUsersRepository {
     });
   }
 
-  setRole(id: string, role: User['role']): Promise<UserWithCapabilities> {
-    // Role is embedded in the JWT — rotate the version so the next request
-    // forces a re-login with the new role.
-    return this.prisma.user.update({
-      where: { id },
-      data: { role, tokenVersion: { increment: 1 } },
-      include: USER_INCLUDES,
+  /**
+   * Change a user's platform role marker, keeping staff state consistent.
+   *
+   * Demoting to USER must strip everything that grants access, not just the
+   * marker: the `isStaff` flag the admin panel gates on, the scope assignment
+   * rows, and every permission grant. Flipping the enum alone would leave a
+   * "demoted" account still holding its permissions and still able to open the
+   * panel.
+   *
+   * Role is embedded in the JWT, so tokenVersion rotates either way to force a
+   * re-login.
+   */
+  async setRole(id: string, role: User['role']): Promise<UserWithCapabilities> {
+    const becomingStaff = role !== 'USER';
+
+    return this.prisma.$transaction(async (tx) => {
+      if (!becomingStaff) {
+        await tx.staffPermission.deleteMany({ where: { userId: id } });
+        await tx.systemStaff.deleteMany({ where: { userId: id } });
+        await tx.venueStaff.deleteMany({ where: { userId: id } });
+        await tx.organizerStaff.deleteMany({ where: { userId: id } });
+      } else {
+        await tx.systemStaff.upsert({
+          where: { userId: id },
+          update: { status: 'ACTIVE' },
+          create: { userId: id, createdBy: id, status: 'ACTIVE' },
+        });
+      }
+
+      return tx.user.update({
+        where: { id },
+        data: { role, isStaff: becomingStaff, tokenVersion: { increment: 1 } },
+        include: USER_INCLUDES,
+      });
     });
+  }
+
+  /** How many active super admins exist — used to block removing the last one. */
+  countSuperAdmins(): Promise<number> {
+    return this.prisma.user.count({ where: { role: 'SUPER_ADMIN', isActive: true } });
   }
 
   private buildOrderBy(

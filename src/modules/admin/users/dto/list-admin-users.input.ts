@@ -46,6 +46,19 @@ export class ListAdminUsersInput {
   @IsBoolean()
   isActive?: boolean;
 
+  /**
+   * Platform, venue and tournament admins are excluded by default — this
+   * directory is the customer list, and admins are managed under Staff. Set
+   * true to search across everyone (e.g. to find an admin's own bookings).
+   */
+  @Field({
+    defaultValue: false,
+    description: 'Include admins in the results. They are excluded by default.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  includeStaff?: boolean;
+
   @Field(() => AdminUserSortField, { defaultValue: AdminUserSortField.CREATED_AT })
   @IsOptional()
   @IsEnum(AdminUserSortField)

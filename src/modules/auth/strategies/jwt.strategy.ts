@@ -15,7 +15,19 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!secret) throw new Error('JWT_ACCESS_SECRET is not configured');
 
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: (request) => {
+        // Try to extract from Authorization header first
+        const token = ExtractJwt.fromAuthHeaderAsBearerToken()(request);
+        if (token) return token;
+
+        // If not in header, try to extract from accessToken cookie
+        const cookies = request.cookies;
+        if (cookies && cookies.accessToken) {
+          return cookies.accessToken;
+        }
+
+        return null;
+      },
       ignoreExpiration: false,
       secretOrKey: secret,
     });

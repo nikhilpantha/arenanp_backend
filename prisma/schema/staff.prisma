@@ -1,0 +1,94 @@
+// ─── Staff Management ───────────────────────────────────────────────────────
+// Staff are isolated from regular Users to maintain clean separation of concerns.
+// Three levels: Platform, Venue, and Organizer/Tournament staff.
+
+/// Platform-level staff (SUPER_ADMIN, ADMIN, MODERATOR, SUPPORT_AGENT)
+model SystemStaff {
+  id          String   @id @default(cuid())
+  userId      String   @unique // Reference to User, but SystemStaff is the authority
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Current status
+  status      StaffStatus @default(ACTIVE) // ACTIVE | SUSPENDED | INACTIVE
+  joinedAt    DateTime    @default(now())
+  suspendedAt DateTime?   // When was this staff suspended
+
+  // Permissions are granted per-user with scopeType=PLATFORM; see
+  // StaffPermission. SystemStaff is just the "is this user platform staff?" marker.
+
+  // Audit trail
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String   // User ID who created this staff
+  suspendedBy String?  // User ID who suspended this staff
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdBy])
+  @@map("system_staff")
+}
+
+/// Venue-level staff (staff members assigned to specific venues)
+model VenueStaff {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation("VenueStaff", fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue       @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  // Current status
+  status    StaffStatus @default(ACTIVE)
+  joinedAt  DateTime    @default(now())
+
+  // Permissions are granted per-user with scopeType=VENUE and scopeId=venueId;
+  // see StaffPermission. VenueStaff marks the assignment itself.
+
+  // Audit trail
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String   // User ID who added this staff
+  addedBy   String?  // Full name of who added (for audit)
+
+  @@unique([userId, venueId]) // One staff member can't have duplicate roles in same venue
+  @@index([userId])
+  @@index([venueId])
+  @@index([status])
+  @@map("venue_staff")
+}
+
+/// Tournament/Organizer-level staff
+model OrganizerStaff {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation("OrganizerStaff", fields: [userId], references: [id], onDelete: Cascade)
+  organizerId  String?     // If assigned to an organizer/league
+  tournamentId String?     // If assigned to a specific tournament
+  tournament   Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  // Current status
+  status       StaffStatus @default(ACTIVE)
+  joinedAt     DateTime    @default(now())
+
+  // Permissions are granted per-user with scopeType=TOURNAMENT and
+  // scopeId=tournamentId; see StaffPermission. OrganizerStaff marks the assignment.
+
+  // Audit trail
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String   // User ID who added this staff
+  addedBy      String?  // Full name of who added (for audit)
+
+  @@unique([userId, tournamentId])
+  @@index([userId])
+  @@index([organizerId])
+  @@index([tournamentId])
+  @@index([status])
+  @@map("organizer_staff")
+}
+
+/// Staff status enumeration
+enum StaffStatus {
+  ACTIVE    // Staff can perform their duties
+  SUSPENDED // Staff access temporarily disabled
+  INACTIVE  // Staff no longer with organization
+}

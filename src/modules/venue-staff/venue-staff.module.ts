@@ -7,6 +7,7 @@ import { StaffActivityService } from './staff-activity.service';
 import { VenueStaffRepository } from './venue-staff.repository';
 import { VenueStaffResolver } from './venue-staff.resolver';
 import { VenueStaffService } from './venue-staff.service';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Who works at a venue: minting staff logins, changing roles, suspending and
@@ -18,7 +19,7 @@ import { VenueStaffService } from './venue-staff.service';
  * wait for a token to expire.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [RbacModule, AuthModule],
   providers: [
     VenueStaffResolver,
     VenueStaffService,

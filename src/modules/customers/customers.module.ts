@@ -7,6 +7,7 @@ import { CustomerInsightsService } from './customer-insights.service';
 import { CustomersRepository } from './customers.repository';
 import { CustomersResolver } from './customers.resolver';
 import { CustomersService } from './customers.service';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Venue customers — the per-venue CRM (`Customer` table). A customer is a walk-in
@@ -15,6 +16,7 @@ import { CustomersService } from './customers.service';
  * get-or-create the player's customer (`getOrCreateForUser`).
  */
 @Module({
+  imports: [RbacModule],
   providers: [
     CustomersResolver,
     CustomersService,

@@ -1,15 +1,11 @@
 import { Query, Resolver } from '@nestjs/graphql';
-import { UseGuards } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
 
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../../common/guards/roles.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import { AdminDashboardService } from './dashboard.service';
 import { AdminDashboardOverview } from './dto/dashboard.models';
 
 @Resolver(() => AdminDashboardOverview)
-@UseGuards(RolesGuard)
-@Roles(UserRole.SUPER_ADMIN)
+@RequirePermission('dashboard.view')
 export class AdminDashboardResolver {
   constructor(private readonly service: AdminDashboardService) {}
 

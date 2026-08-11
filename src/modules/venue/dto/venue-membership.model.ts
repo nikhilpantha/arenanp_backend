@@ -8,7 +8,6 @@ import {
 } from '@prisma/client';
 
 import '../../../common/enums';
-import { effectivePermissions } from '../../../common/constants/permissions';
 
 /**
  * The signed-in user's seat in a venue, with the effective permission set
@@ -26,15 +25,23 @@ export class VenueMembershipModel {
 }
 
 type MembershipWithVenue = PrismaMembership & {
-  venue: Pick<PrismaVenue, 'name' | 'verificationStatus'>;
+  venue: Pick<PrismaVenue, 'name' | 'verificationStatus' | 'primaryOwnerId'>;
 };
 
-export function mapMembershipToGraphql(m: MembershipWithVenue): VenueMembershipModel {
+/**
+ * @param permissions What the caller actually holds at this venue, resolved
+ *   from `staff_permissions`. Never derive these from `m.role` — the role is a
+ *   job title and two venues' Managers can hold different sets.
+ */
+export function mapMembershipToGraphql(
+  m: MembershipWithVenue,
+  permissions: string[],
+): VenueMembershipModel {
   return {
     venueId: m.venueId,
     venueName: m.venue.name,
     role: m.role,
-    permissions: effectivePermissions(m.role, m.permissions),
+    permissions,
     status: m.status,
     verificationStatus: m.venue.verificationStatus,
   };

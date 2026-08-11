@@ -68,14 +68,36 @@ export class User {
 
   @Field()
   updatedAt!: Date;
+
+  /** Whether this user is a platform staff member. */
+  @Field()
+  isStaff!: boolean;
+
+  /** Suspension timestamp (null = active). */
+  @Field({ nullable: true })
+  suspendedAt?: Date;
+
+  /**
+   * Every permission this staff member holds platform-wide. `["*"]` means
+   * unrestricted. This is the only thing that describes what they can do —
+   * `role` is a coarse marker, not an authority.
+   */
+  @Field(() => [String], { nullable: true })
+  staffPermissions?: string[];
 }
 
-type PrismaUserWithCapabilities = PrismaUser & { capabilities?: UserCapability[] };
+type PrismaUserWithCapabilities = Omit<PrismaUser, 'isStaff' | 'suspendedAt'> & {
+  isStaff?: boolean;
+  suspendedAt?: Date | null;
+  capabilities?: UserCapability[];
+  staffPermissions?: string[];
+};
 
 export function mapUserToGraphql(user: PrismaUserWithCapabilities): User {
   const caps = user.capabilities ?? [];
   const statusOf = (type: CapabilityType): CapabilityStatus =>
     caps.find((c) => c.type === type)?.status ?? CapabilityStatus.NOT_REQUESTED;
+
   return {
     id: user.id,
     fullName: user.fullName ?? undefined,
@@ -91,5 +113,12 @@ export function mapUserToGraphql(user: PrismaUserWithCapabilities): User {
     lastLoginAt: user.lastLoginAt ?? undefined,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+    // Derived, not just read: `isStaff` is the single gate the admin app uses,
+    // and the column was added after the first accounts existed. Falling back
+    // to the role marker means a un-backfilled row can never lock a real admin
+    // out of the panel.
+    isStaff: (user.isStaff ?? false) || user.role !== UserRole.USER,
+    suspendedAt: user.suspendedAt ?? undefined,
+    staffPermissions: user.staffPermissions ?? undefined,
   };
 }

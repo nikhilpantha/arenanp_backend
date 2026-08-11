@@ -19,7 +19,7 @@ export class ClosuresResolver {
     description: 'Closures / time blocks for a venue.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('bookings:read')
+  @RequireVenuePermission('venue.bookings.view')
   venueClosures(@Args('input') input: ListClosuresInput): Promise<ClosureModel[]> {
     return this.service.list(input);
   }
@@ -29,7 +29,7 @@ export class ClosuresResolver {
     description: 'Block a court or the whole venue for a time window.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('calendar:manage')
+  @RequireVenuePermission('venue.calendar.manage')
   createClosure(
     @Args('input') input: CreateClosureInput,
     @CurrentUser() user: AuthUser,
@@ -42,7 +42,7 @@ export class ClosuresResolver {
     description: 'Remove a closure / time block.',
   })
   @UseGuards(VenuePermissionGuard)
-  @RequireVenuePermission('calendar:manage')
+  @RequireVenuePermission('venue.calendar.manage')
   deleteClosure(
     @Args('venueId', { type: () => ID }) venueId: string,
     @Args('closureId', { type: () => ID }) closureId: string,
